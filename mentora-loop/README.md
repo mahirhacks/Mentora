@@ -27,3 +27,12 @@ This folder is self-contained except for:
 - Probe emit calls in `TeachingConductor.ts` / `turnGate.ts` (no-ops unless a sink is registered)
 
 To detach: remove the root script, delete this folder, and optionally strip probe calls / override API.
+
+## Supervised live smoke (paid)
+
+```bash
+# Requires explicit confirmation — never auto-loop on paid failures
+MENTORA_LIVE_SMOKE_CONFIRM=1 pnpm test:mentora-live-smoke
+```
+
+Ask before running. Max 2 attempts; always stops the server in `finally`; redacts API keys from logs/reports.

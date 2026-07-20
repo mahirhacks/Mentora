@@ -1,7 +1,6 @@
 import {
   DEFAULT_REALTIME_MODEL,
   DEFAULT_PLANNER_MODEL,
-  REALTIME_TOOLS,
 } from "@mentora/shared";
 import { env } from "../env.js";
 
@@ -11,15 +10,16 @@ export function realtimeSessionConfig() {
     model: env.realtimeModel || DEFAULT_REALTIME_MODEL,
     reasoning: { effort: "low" as const },
     output_modalities: ["audio" as const],
-    tools: REALTIME_TOOLS,
-    tool_choice: "auto" as const,
-    instructions: `You are Mentora, a visual AI math teacher. Always use board_apply_actions to draw on the whiteboard while teaching. Speak at most 1-2 short sentences before each board tool call.`,
+    // Client owns decide-then-voice; mint session must not advertise tool-driven teaching.
+    tools: [] as const,
+    tool_choice: "none" as const,
+    instructions: `You are Mentora, a patient real-time AI teacher. You speak only. The client Decision API evaluates answers and draws the board. Never call tools. Never call update_lesson_state. After you finish a check question, stop and wait.`,
     audio: {
       input: {
         turn_detection: {
           type: "semantic_vad" as const,
-          eagerness: "low" as const,
-          create_response: true,
+          eagerness: "medium" as const,
+          create_response: false,
           interrupt_response: true,
         },
       },

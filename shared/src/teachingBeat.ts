@@ -526,7 +526,15 @@ export function softenFailedBoardVoice(script: string): string {
       "",
     )
     .replace(
-      /\b(just divided|I just (drew|split|divided)|look at the (new|split|four)[^.!]*)[.!?]?/gi,
+      /\b(I\s+)?(just\s+)?(drew|split|divided|sketched|labeled|labelled|placed|added)\b[^.!?]*[.!?]?/gi,
+      "",
+    )
+    .replace(
+      /\b(look at the (new|split|four|cells?|regions?)[^.!]*)[.!?]?/gi,
+      "",
+    )
+    .replace(
+      /\b(here('s| is)|here are)\s+(the\s+)?(four\s+)?(new\s+)?(cells?|regions?|shapes?)[^.!?]*[.!?]?/gi,
       "",
     )
     .replace(/\s{2,}/g, " ")

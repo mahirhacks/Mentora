@@ -5,7 +5,7 @@ export function fixtureTwoCueChoreography(
   overrides?: Partial<TeachingChoreography>,
 ): TeachingChoreography {
   return {
-    classification: "correct",
+    classification: "correct_with_understanding",
     understandingDelta: 0.1,
     nextQuestion: "What is one side length of the square?",
     referencedBoardObjectIds: ["sq1"],
@@ -47,7 +47,7 @@ export function fixtureTwoCueChoreography(
 
 export function fixtureSingleCueNoBoard(): TeachingChoreography {
   return {
-    classification: "partial",
+    classification: "partially_correct",
     understandingDelta: 0.05,
     nextQuestion: "Can you say that again in your own words?",
     referencedBoardObjectIds: [],

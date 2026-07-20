@@ -1,97 +1,21 @@
 /**
  * Strict Structured Outputs JSON Schema for TeachingChoreography.
- * Every property in each object is listed in `required`; optionals are nullable.
- * Board ops use anyOf (one schema per op) so OpenAI strict mode accepts them.
+ * Built from shared Zod enums / limits so openaiDecide stays aligned with
+ * TeachingChoreographySchema. Board ops use anyOf (OpenAI strict cannot use
+ * Zod discriminatedUnion oneOf without this shape).
  */
-export const teachingChoreographyJsonSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    classification: {
-      type: "string",
-      enum: [
-        "correct_with_understanding",
-        "correct_with_hint",
-        "partially_correct",
-        "incorrect_calculation",
-        "incorrect_concept",
-        "missing_prerequisite",
-        "does_not_know",
-        "off_topic",
-        "unclear_audio",
-        "student_visual_attempt",
-      ],
-    },
-    understandingDelta: { type: "number" },
-    cues: {
-      type: "array",
-      minItems: 1,
-      maxItems: 6,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          cueId: { type: "string" },
-          voiceScript: { type: "string" },
-          actionsBefore: {
-            type: "array",
-            maxItems: 8,
-            items: boardOpAnyOf(),
-          },
-          actionsDuring: {
-            type: "array",
-            maxItems: 4,
-            items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                triggerId: { type: "string" },
-                triggerPhrase: { type: "string" },
-                actions: {
-                  type: "array",
-                  maxItems: 4,
-                  items: boardOpAnyOf(),
-                },
-                fallbackAtMs: { type: "number" },
-              },
-              required: [
-                "triggerId",
-                "triggerPhrase",
-                "actions",
-                "fallbackAtMs",
-              ],
-            },
-          },
-          actionsAfter: {
-            type: "array",
-            maxItems: 6,
-            items: boardOpAnyOf(),
-          },
-        },
-        required: [
-          "cueId",
-          "voiceScript",
-          "actionsBefore",
-          "actionsDuring",
-          "actionsAfter",
-        ],
-      },
-    },
-    nextQuestion: { type: "string" },
-    referencedBoardObjectIds: {
-      type: "array",
-      items: { type: "string" },
-    },
-    completedStepId: { type: ["string", "null"] },
-  },
-  required: [
-    "classification",
-    "understandingDelta",
-    "cues",
-    "nextQuestion",
-    "referencedBoardObjectIds",
-    "completedStepId",
-  ],
+import { StudentResponseClassificationSchema } from "./lesson.js";
+
+/** Keep in sync with TeachingCueSchema / TeachingCueTriggerSchema max bounds. */
+export const CHOREOGRAPHY_JSON_LIMITS = {
+  cuesMax: 6,
+  actionsBeforeMax: 10,
+  actionsDuringMax: 6,
+  actionsAfterMax: 8,
+  triggerActionsMax: 6,
+  understandingDeltaMin: -0.25,
+  understandingDeltaMax: 0.25,
+  voiceScriptMax: 280,
 } as const;
 
 function cellSchema() {
@@ -235,3 +159,97 @@ function boardOpAnyOf() {
     ],
   };
 }
+
+/** Exact schema object passed to OpenAI Responses `text.format.schema`. */
+export function buildTeachingChoreographyJsonSchema() {
+  const L = CHOREOGRAPHY_JSON_LIMITS;
+  return {
+    type: "object" as const,
+    additionalProperties: false as const,
+    properties: {
+      classification: {
+        type: "string" as const,
+        enum: [...StudentResponseClassificationSchema.options],
+      },
+      understandingDelta: {
+        type: "number" as const,
+        minimum: L.understandingDeltaMin,
+        maximum: L.understandingDeltaMax,
+      },
+      cues: {
+        type: "array" as const,
+        minItems: 1,
+        maxItems: L.cuesMax,
+        items: {
+          type: "object" as const,
+          additionalProperties: false as const,
+          properties: {
+            cueId: { type: "string" as const },
+            voiceScript: {
+              type: "string" as const,
+              maxLength: L.voiceScriptMax,
+            },
+            actionsBefore: {
+              type: "array" as const,
+              maxItems: L.actionsBeforeMax,
+              items: boardOpAnyOf(),
+            },
+            actionsDuring: {
+              type: "array" as const,
+              maxItems: L.actionsDuringMax,
+              items: {
+                type: "object" as const,
+                additionalProperties: false as const,
+                properties: {
+                  triggerId: { type: "string" as const },
+                  triggerPhrase: { type: "string" as const },
+                  actions: {
+                    type: "array" as const,
+                    maxItems: L.triggerActionsMax,
+                    items: boardOpAnyOf(),
+                  },
+                  fallbackAtMs: { type: "number" as const },
+                },
+                required: [
+                  "triggerId",
+                  "triggerPhrase",
+                  "actions",
+                  "fallbackAtMs",
+                ],
+              },
+            },
+            actionsAfter: {
+              type: "array" as const,
+              maxItems: L.actionsAfterMax,
+              items: boardOpAnyOf(),
+            },
+          },
+          required: [
+            "cueId",
+            "voiceScript",
+            "actionsBefore",
+            "actionsDuring",
+            "actionsAfter",
+          ],
+        },
+      },
+      nextQuestion: { type: "string" as const },
+      referencedBoardObjectIds: {
+        type: "array" as const,
+        items: { type: "string" as const },
+      },
+      completedStepId: { type: ["string", "null"] as const },
+    },
+    required: [
+      "classification",
+      "understandingDelta",
+      "cues",
+      "nextQuestion",
+      "referencedBoardObjectIds",
+      "completedStepId",
+    ],
+  };
+}
+
+export const teachingChoreographyJsonSchema =
+  buildTeachingChoreographyJsonSchema();

@@ -66,6 +66,8 @@ export class TeachingConductor {
   private playing = false;
   private boardDegraded = false;
   private opChain: Promise<void> = Promise.resolve();
+  /** Bumped on cancel/play so in-flight applies cannot commit after interrupt. */
+  private applyEpoch = 0;
 
   isPlaying() {
     return this.playing;
@@ -87,6 +89,7 @@ export class TeachingConductor {
     this.finalized = false;
     this.classificationNoted = false;
     this.boardDegraded = false;
+    this.applyEpoch += 1;
     this.opChain = Promise.resolve();
     this.playing = true;
     mentoraProbe("conductor", "play_start", {
@@ -180,6 +183,11 @@ export class TeachingConductor {
       );
       if (!afterOk) {
         console.warn("[mentora:conductor] actionsAfter failed", cue.cueId);
+        mentoraProbe("conductor", "actions_after_failed", {
+          cueId: cue.cueId,
+        });
+        // Voice already finished for this cue — strip remaining board work only.
+        this.boardDegraded = true;
         this.degradeRemainingCues(this.cueIndex + 1);
       }
     }
@@ -219,6 +227,7 @@ export class TeachingConductor {
 
   cancel() {
     const wasPlaying = this.playing;
+    this.applyEpoch += 1;
     this.clearFallbackTimers();
     this.choreo = null;
     this.ctx = null;
@@ -425,8 +434,10 @@ export class TeachingConductor {
     ops: BoardDiagramOp[],
     label: string,
   ): Promise<boolean> {
+    const epoch = this.applyEpoch;
     const ctx = this.ctx;
     if (!ctx || !ops.length) return true;
+    if (epoch !== this.applyEpoch) return false;
     const baseBoardVersion = useTeachingStore.getState().runtime.boardVersion;
     const result = await applyBeatStepOps({
       queue: ctx.getQueue(),
@@ -436,6 +447,7 @@ export class TeachingConductor {
       studentItemId: ctx.studentItemId,
       expectedStudentItemId: ctx.getExpectedStudentItemId(),
       baseBoardVersion,
+      shouldCommit: () => epoch === this.applyEpoch && this.ctx === ctx,
     });
     if (!result.ok) {
       console.warn("[mentora:conductor] apply skipped", label, result.reason);

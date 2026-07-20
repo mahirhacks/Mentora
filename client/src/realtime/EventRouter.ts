@@ -1,23 +1,30 @@
 import { REALTIME_TOOLS } from "@mentora/shared";
 import type { BoardActionQueue } from "../board/ActionQueue";
 import type { RealtimeClient } from "./RealtimeClient";
-import { handleToolCall, type ToolCall } from "./toolHandlers";
+import {
+  handleToolCall,
+  type ToolCall,
+} from "./toolHandlers";
 import { CONTINUE_AFTER_TOOLS } from "./instructions";
+import type { TurnGate } from "./turnGate";
 import { useTeachingStore } from "../state/teachingStore";
+import { isBoardTool, isFocusOnlyBoardTool, setVoiceActivity } from "./voiceActivity";
 
 /**
- * Routes Realtime data-channel events: tool calls, speech interrupts, etc.
+ * Routes Realtime tool calls and coordinates with TurnGate.
  */
 export class EventRouter {
   private pendingArgs = new Map<string, { name: string; arguments: string }>();
   private executed = new Set<string>();
-  /** Tool calls still running (or queued) before we may create a follow-up response. */
   private inFlight = 0;
+  private drawingJobs = 0;
   private responseTimer: ReturnType<typeof setTimeout> | null = null;
+  private needsContinue = false;
 
   constructor(
     private client: RealtimeClient,
     private queue: BoardActionQueue,
+    private gate: TurnGate,
   ) {}
 
   async onEvent(event: Record<string, unknown>) {
@@ -27,12 +34,56 @@ export class EventRouter {
       console.error("[mentora:realtime:error]", event);
     }
 
-    if (type === "input_audio_buffer.speech_started") {
-      this.queue.interruptDropPending();
-      useTeachingStore.getState().patchRuntime({ wasInterrupted: true });
+    if (type === "response.created") {
+      if (this.gate.shouldCancelWhileWaiting()) {
+        console.info("[mentora:gate] cancel stray response while waiting");
+        this.client.sendEvent({ type: "response.cancel" });
+        this.needsContinue = false;
+        return;
+      }
+      this.gate.onResponseCreated(event);
+      if (this.responseTimer) {
+        clearTimeout(this.responseTimer);
+        this.responseTimer = null;
+      }
     }
 
-    // Accumulate streamed function args
+    if (type === "response.done" || type === "response.cancelled") {
+      this.gate.onResponseFinished(event, type === "response.cancelled");
+      // Waiting transition is owned by TurnGate (completed + metadata match).
+      this.flushContinueIfNeeded();
+    }
+
+    if (type === "input_audio_buffer.speech_started") {
+      this.queue.interruptDropPending();
+      this.needsContinue = false;
+      if (this.responseTimer) {
+        clearTimeout(this.responseTimer);
+        this.responseTimer = null;
+      }
+      this.gate.onSpeechStarted();
+    }
+
+    if (type === "input_audio_buffer.speech_stopped") {
+      this.gate.onSpeechStopped();
+    }
+
+    if (type === "conversation.item.input_audio_transcription.completed") {
+      this.gate.onTranscriptionCompleted(
+        String(event.transcript ?? ""),
+        String(event.item_id ?? ""),
+      );
+    }
+
+    if (type === "conversation.item.deleted") {
+      const itemId = String(
+        (event.item as { id?: string } | undefined)?.id ??
+          event.item_id ??
+          "",
+      );
+      if (itemId) this.gate.onItemDeleted(itemId);
+    }
+
     if (
       type === "response.function_call_arguments.delta" ||
       type === "response.output_item.added"
@@ -53,9 +104,11 @@ export class EventRouter {
         name: name || prev.name,
         arguments: baseArgs + delta,
       });
+      if (name && isBoardTool(name)) {
+        setVoiceActivity({ thinking: true });
+      }
     }
 
-    // GA: arguments finalized on this event (fields are top-level)
     if (type === "response.function_call_arguments.done") {
       const callId = String(event.call_id ?? "");
       const name = String(
@@ -111,21 +164,38 @@ export class EventRouter {
     }
   }
 
-  private scheduleContinueResponse() {
+  private flushContinueIfNeeded() {
+    if (!this.needsContinue) return;
+    if (this.inFlight > 0) return;
+    if (this.gate.isResponseLive()) return;
+
+    const phase = useTeachingStore.getState().runtime.phase;
+    if (phase === "waiting_for_student" || phase === "complete") {
+      this.needsContinue = false;
+      return;
+    }
+
     if (this.responseTimer) clearTimeout(this.responseTimer);
     this.responseTimer = setTimeout(() => {
       this.responseTimer = null;
-      if (this.inFlight > 0) return;
-      const phase = useTeachingStore.getState().runtime.phase;
-      // If we're already waiting on the student, don't poke the model to talk.
-      if (phase === "waiting_for_student" || phase === "complete") return;
+      if (!this.needsContinue || this.inFlight > 0 || this.gate.isResponseLive()) {
+        return;
+      }
+      const p = useTeachingStore.getState().runtime.phase;
+      if (p === "waiting_for_student" || p === "complete") {
+        this.needsContinue = false;
+        return;
+      }
+      this.needsContinue = false;
       this.client.sendEvent({
         type: "response.create",
         response: {
+          output_modalities: ["audio"],
+          tool_choice: "none",
           instructions: CONTINUE_AFTER_TOOLS,
         },
       });
-    }, 120);
+    }, 350);
   }
 
   private async execute(call: ToolCall) {
@@ -133,9 +203,24 @@ export class EventRouter {
     if (this.executed.has(call.call_id)) return;
     this.executed.add(call.call_id);
     this.inFlight += 1;
+    const board = isBoardTool(call.name);
+    const focusOnly = board && isFocusOnlyBoardTool(call.name, call.arguments);
+    if (board) {
+      this.drawingJobs += 1;
+      // Focus overlays (point/highlight) must not steal the "speaking" UI mid-sentence.
+      if (focusOnly) {
+        setVoiceActivity({ drawing: true, thinking: false });
+      } else {
+        setVoiceActivity({ drawing: true, thinking: false, speaking: false });
+      }
+    } else {
+      setVoiceActivity({ thinking: true });
+    }
 
+    let toolOutput = "";
     try {
       const { call_id, output } = await handleToolCall(call, this.queue);
+      toolOutput = output;
       console.info("[mentora:tool:result]", call.name, output.slice(0, 240));
       this.client.sendEvent({
         type: "conversation.item.create",
@@ -147,21 +232,38 @@ export class EventRouter {
       });
     } catch (err) {
       console.error("[mentora:tool:fail]", call.name, err);
+      toolOutput = JSON.stringify({
+        success: false,
+        error: "EXECUTION_ERROR",
+        issues: [err instanceof Error ? err.message : String(err)],
+      });
       this.client.sendEvent({
         type: "conversation.item.create",
         item: {
           type: "function_call_output",
           call_id: call.call_id,
-          output: JSON.stringify({
-            success: false,
-            error: "EXECUTION_ERROR",
-            issues: [err instanceof Error ? err.message : String(err)],
-          }),
+          output: toolOutput,
         },
       });
     } finally {
       this.inFlight = Math.max(0, this.inFlight - 1);
-      this.scheduleContinueResponse();
+      if (board) {
+        this.drawingJobs = Math.max(0, this.drawingJobs - 1);
+        if (this.drawingJobs === 0) {
+          setVoiceActivity({ drawing: false });
+        }
+        // Heavy draws may end the audio turn — request a continue.
+        // Focus-only point/highlight rides under live speech; do not fragment.
+        if (!focusOnly) {
+          this.needsContinue = true;
+        }
+      }
+      // update_lesson_state is refused by the client (CLIENT_OWNS_PHASE).
+      // Do not special-case it for continue / ASK_FIRST — phases are client-owned.
+      if (this.inFlight === 0) {
+        setVoiceActivity({ thinking: false, drawing: this.drawingJobs > 0 });
+        this.flushContinueIfNeeded();
+      }
     }
   }
 }

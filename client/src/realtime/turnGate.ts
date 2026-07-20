@@ -252,6 +252,27 @@ export class TurnGate {
         // "advanced" already called beginVoiceTurn for the next cue — keep that activeVoice.
         if (result === "finished" || result === "cancelled") {
           this.activeVoice = null;
+          return;
+        }
+        // Ignored with a terminal done for our active response — clear stuck state.
+        if (
+          result === "ignored" &&
+          active &&
+          id &&
+          (id === active.responseId || active.responseId === null) &&
+          status !== "completed"
+        ) {
+          this.conductor.cancel();
+          this.activeVoice = null;
+          useTeachingStore.getState().patchRuntime({
+            phase: "waiting_for_student",
+            wasInterrupted: true,
+          });
+          this.lock();
+          mentoraProbe("gate", "clear_stuck_voice", {
+            responseId: id,
+            status,
+          });
         }
       });
       return;

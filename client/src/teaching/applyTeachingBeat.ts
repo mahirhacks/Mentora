@@ -46,6 +46,8 @@ export async function applyBeatStepOps(input: {
   studentItemId: string;
   expectedStudentItemId: string;
   baseBoardVersion: number;
+  /** Return false to discard a completed apply (e.g. conductor cancelled mid-flight). */
+  shouldCommit?: () => boolean;
 }): Promise<ApplyBeatResult> {
   if (!casOk(input)) {
     const rt = useTeachingStore.getState().runtime;
@@ -78,6 +80,10 @@ export async function applyBeatStepOps(input: {
     }
   }
 
+  if (input.shouldCommit && !input.shouldCommit()) {
+    return { ok: false, reason: "stale" };
+  }
+
   const after = useTeachingStore.getState().runtime;
   if (
     after.boardVersion !== input.baseBoardVersion ||
@@ -94,16 +100,19 @@ export async function applyBeatStepOps(input: {
   return { ok: true, boardVersion };
 }
 
-/** Record classification early; understanding/step wait until choreography completes. */
+/**
+ * Record classification label only — no understanding / streak / step side effects.
+ * Full runtime commit happens in finalizeBeatRuntime after the last cue succeeds.
+ */
 export function noteClassificationEarly(choreo: TeachingChoreography): void {
-  const after = useTeachingStore.getState().runtime;
-  const next = recordClassification(after, choreo.classification);
-  useTeachingStore.getState().setRuntime(next);
+  useTeachingStore.getState().patchRuntime({
+    lastClassification: choreo.classification,
+  });
 }
 
 /**
- * Commit understanding + questionsAsked + completedStepId after the full
- * choreography finishes successfully (not on interrupt mid-cue).
+ * Commit classification side effects + understandingDelta + questionsAsked +
+ * completedStepId after the full choreography finishes successfully.
  */
 export function finalizeBeatRuntime(choreo: TeachingChoreography): void {
   const after = useTeachingStore.getState().runtime;
