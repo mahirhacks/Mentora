@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck && npm --prefix debug run typecheck",
+    "test": "npm --prefix server test && npm --prefix client test",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "verify": "npm run typecheck && npm test && npm run build",
     "debug": "npm --prefix debug start",
     "debug:prompt": "npm --prefix debug start --",
     "tools": "npm --prefix server run tools",

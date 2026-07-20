@@ -8,14 +8,17 @@ const speakDirectiveSchema = {
   additionalProperties: false,
   required: ["speech_id", "voice_script", "board_references", "question"],
   properties: {
-    speech_id: { type: "string" },
+    speech_id: { type: "string", minLength: 1, maxLength: 80 },
     voice_script: {
       type: "string",
+      minLength: 1,
+      maxLength: 600,
       description:
         "Natural spoken teaching line for the voice performer. Write exactly how Mentora should sound aloud, responding to the student's message.",
     },
     board_references: {
       type: "array",
+      maxItems: 20,
       items: { type: "string" },
     },
     question: {
@@ -42,6 +45,7 @@ export function toOpenAiTools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
             steps: {
               type: "array",
               minItems: 3,
+              maxItems: 12,
               items: {
                 type: "object",
                 additionalProperties: false,
@@ -53,6 +57,8 @@ export function toOpenAiTools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
                   },
                   text: {
                     type: "string",
+                    minLength: 1,
+                    maxLength: 400,
                     description: "Required for observe steps.",
                   },
                   speech: speakDirectiveSchema,
@@ -60,6 +66,7 @@ export function toOpenAiTools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
                   tool_input: { type: "object" },
                   board_references: {
                     type: "array",
+                    maxItems: 20,
                     items: { type: "string" },
                     description:
                       "Optional observe-step object ids to verify on the board.",

@@ -1,4 +1,5 @@
 import { createBoardState } from "./boardState.js";
+import { arrowTool } from "./arrow.js";
 import { createShapeTool } from "./createShape.js";
 import { divideRegionTool } from "./divideRegion.js";
 import { eraseObjectTool } from "./eraseObject.js";
@@ -9,6 +10,10 @@ import { pointAtTool } from "./pointAt.js";
 import { resetBoardTool } from "./resetBoard.js";
 import { writeTextTool } from "./writeText.js";
 import type { BoardState, ToolDefinition, ToolRunOutcome } from "./types.js";
+import {
+  compileToolValidators,
+  validateToolInput,
+} from "./toolValidation.js";
 
 export const boardTools = [
   createShapeTool,
@@ -17,6 +22,7 @@ export const boardTools = [
   placeRelativeTool,
   highlightTool,
   pointAtTool,
+  arrowTool,
   writeTextTool,
   eraseObjectTool,
   resetBoardTool,
@@ -26,6 +32,9 @@ export type BoardToolName = (typeof boardTools)[number]["name"];
 
 const toolMap = new Map<string, ToolDefinition>(
   boardTools.map((tool) => [tool.name, tool as ToolDefinition]),
+);
+const toolValidators = compileToolValidators(
+  boardTools as readonly ToolDefinition[],
 );
 
 export function getTool(name: string): ToolDefinition | undefined {
@@ -46,6 +55,15 @@ export function runTool(
     return {
       ok: false,
       error: `Unknown tool: ${name}`,
+      state,
+    };
+  }
+
+  const validation = validateToolInput(toolValidators, name, input);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: validation.error,
       state,
     };
   }
@@ -85,6 +103,7 @@ export { labelInTool } from "./labelIn.js";
 export { placeRelativeTool } from "./placeRelative.js";
 export { highlightTool } from "./highlight.js";
 export { pointAtTool } from "./pointAt.js";
+export { arrowTool } from "./arrow.js";
 export { writeTextTool } from "./writeText.js";
 export { eraseObjectTool } from "./eraseObject.js";
 export { resetBoardTool } from "./resetBoard.js";

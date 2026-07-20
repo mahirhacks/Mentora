@@ -37,8 +37,8 @@ export const divideRegionTool: ToolDefinition<
     additionalProperties: false,
     required: ["targetId", "divisions"],
     properties: {
-      targetId: { type: "string" },
-      divisions: { type: "integer", minimum: 1, maximum: 12 },
+      targetId: { type: "string", minLength: 1, maxLength: 80 },
+      divisions: { type: "integer", minimum: 2, maximum: 12 },
       direction: {
         type: "string",
         enum: ["horizontal", "vertical"],
@@ -46,11 +46,12 @@ export const divideRegionTool: ToolDefinition<
       },
       style: {
         type: "object",
+        additionalProperties: false,
         properties: {
           stroke: { type: "string" },
           fill: { type: "string" },
-          strokeWidth: { type: "number" },
-          opacity: { type: "number" },
+          strokeWidth: { type: "number", minimum: 0, maximum: 20 },
+          opacity: { type: "number", minimum: 0, maximum: 1 },
         },
       },
     },

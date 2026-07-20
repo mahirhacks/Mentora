@@ -44,8 +44,8 @@ export const labelInTool: ToolDefinition<LabelInInput, LabelInResult> = {
     additionalProperties: false,
     required: ["targetId", "text"],
     properties: {
-      targetId: { type: "string" },
-      text: { type: "string" },
+      targetId: { type: "string", minLength: 1, maxLength: 80 },
+      text: { type: "string", minLength: 1, maxLength: 240 },
       position: {
         type: "string",
         enum: ["center", "top", "bottom", "left", "right"],
@@ -53,11 +53,12 @@ export const labelInTool: ToolDefinition<LabelInInput, LabelInResult> = {
       },
       style: {
         type: "object",
+        additionalProperties: false,
         properties: {
           stroke: { type: "string" },
           fill: { type: "string" },
-          strokeWidth: { type: "number" },
-          opacity: { type: "number" },
+          strokeWidth: { type: "number", minimum: 0, maximum: 20 },
+          opacity: { type: "number", minimum: 0, maximum: 1 },
         },
       },
     },

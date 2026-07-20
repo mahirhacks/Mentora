@@ -27,6 +27,22 @@ export interface BoardStyle {
   opacity?: number;
 }
 
+export type BoardActor = "ai" | "user";
+
+export interface BoardObjectProvenance {
+  createdBy?: BoardActor;
+  updatedBy?: BoardActor;
+}
+
+export interface BoardActivity {
+  id: string;
+  actor: BoardActor;
+  action: "create" | "draw" | "move" | "erase" | "arrow" | "point";
+  objectIds: string[];
+  summary: string;
+  revision: number;
+}
+
 export interface ShapeObject {
   id: string;
   kind: "shape";
@@ -75,6 +91,19 @@ export interface PointerObject {
   style?: BoardStyle;
 }
 
+export interface ArrowObject {
+  id: string;
+  kind: "arrow";
+  from: Point;
+  to: Point;
+  fromId?: string;
+  toId?: string;
+  label?: string;
+  bidirectional?: boolean;
+  bounds: Bounds;
+  style?: BoardStyle;
+}
+
 export interface TextObject {
   id: string;
   kind: "text";
@@ -88,16 +117,20 @@ export interface TextObject {
 }
 
 export type BoardObject =
-  | ShapeObject
-  | LabelObject
-  | TextObject
-  | DivisionObject
-  | HighlightObject
-  | PointerObject;
+  (
+    | ShapeObject
+    | LabelObject
+    | TextObject
+    | DivisionObject
+    | HighlightObject
+    | PointerObject
+    | ArrowObject
+  ) & BoardObjectProvenance;
 
 export interface BoardState {
   objects: Record<string, BoardObject>;
   revision: number;
+  activity?: BoardActivity[];
 }
 
 export interface ToolDefinition<TInput = unknown, TResult = unknown> {

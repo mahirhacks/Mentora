@@ -35,19 +35,22 @@ export const highlightTool: ToolDefinition<HighlightInput, HighlightResult> = {
     additionalProperties: false,
     required: ["targetId"],
     properties: {
-      targetId: { type: "string" },
-      padding: { type: "number", default: 8 },
+      targetId: { type: "string", minLength: 1, maxLength: 80 },
+      padding: { type: "number", minimum: 0, maximum: 80, default: 8 },
       style: {
         type: "object",
+        additionalProperties: false,
         properties: {
           stroke: { type: "string" },
           fill: { type: "string" },
-          strokeWidth: { type: "number" },
-          opacity: { type: "number" },
+          strokeWidth: { type: "number", minimum: 0, maximum: 20 },
+          opacity: { type: "number", minimum: 0, maximum: 1 },
         },
       },
       durationMs: {
         type: "integer",
+        minimum: 0,
+        maximum: 10_000,
         description: "Optional duration hint for the client animation layer.",
       },
     },
@@ -95,8 +98,9 @@ export const highlightTool: ToolDefinition<HighlightInput, HighlightResult> = {
       style: {
         stroke: "#f5a623",
         strokeWidth: 3,
-        fill: "rgba(245, 166, 35, 0.15)",
         ...input.style,
+        // Highlights mark existing content without obscuring it.
+        fill: "rgba(0, 0, 0, 0)",
       },
       durationMs: input.durationMs,
     });

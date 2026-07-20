@@ -1,70 +1,61 @@
-import { BoardCanvas } from "./components/BoardCanvas";
-import { ChatBar } from "./components/ChatBar";
-import { TranscriptionPanel } from "./components/TranscriptionPanel";
-import { useTeachingSession } from "./hooks/useTeachingSession";
+import { useCallback, useState } from "react";
+import { HomePage } from "./pages/HomePage";
+import { LessonPage } from "./pages/LessonPage";
+
+type AppView =
+  | { kind: "home" }
+  | {
+      kind: "lesson";
+      mountId: string;
+      sessionId: string | null;
+      initialPrompt: string | null;
+    };
 
 export function App() {
-  const {
-    boardState,
-    transcript,
-    prompt,
-    setPrompt,
-    isBusy,
-    isPlanning,
-    isSpeaking,
-    activeToolName,
-    error,
-    submitPrompt,
-    reset,
-    isMuted,
-    micStatus,
-    micError,
-    toggleMute,
-  } = useTeachingSession();
+  const [view, setView] = useState<AppView>({ kind: "home" });
+
+  const openHome = useCallback(() => {
+    setView({ kind: "home" });
+  }, []);
+
+  const startLesson = useCallback((prompt: string) => {
+    setView({
+      kind: "lesson",
+      mountId: crypto.randomUUID(),
+      sessionId: null,
+      initialPrompt: prompt.trim() ? prompt.trim() : null,
+    });
+  }, []);
+
+  const openLesson = useCallback((sessionId: string) => {
+    setView({
+      kind: "lesson",
+      mountId: sessionId,
+      sessionId,
+      initialPrompt: null,
+    });
+  }, []);
+
+  if (view.kind === "home") {
+    return (
+      <HomePage onStartLesson={startLesson} onOpenLesson={openLesson} />
+    );
+  }
 
   return (
-    <div className="app-shell">
-      <section className="lesson-workspace">
-        <div className="board-area">
-          <BoardCanvas
-            boardState={boardState}
-            activeToolName={activeToolName}
-          />
-        </div>
-        <div className="chat-area">
-          <div className="chat-toolbar">
-            <div>
-              <p className="eyebrow">Mentora lesson</p>
-              <h1>Interactive teaching board</h1>
-            </div>
-            <button
-              className="reset-button"
-              type="button"
-              onClick={() => void reset()}
-              disabled={isBusy}
-            >
-              Reset board
-            </button>
-          </div>
-          {isSpeaking ? (
-            <p className="speaking-banner">Mentora is speaking...</p>
-          ) : null}
-          {error ? <p className="error-banner">{error}</p> : null}
-          {micError ? <p className="mic-error-banner">{micError}</p> : null}
-          <ChatBar
-            value={prompt}
-            onChange={setPrompt}
-            onSubmit={() => void submitPrompt()}
-            disabled={isBusy}
-            isMuted={isMuted}
-            micStatus={micStatus}
-            micError={micError}
-            onToggleMic={() => void toggleMute()}
-          />
-        </div>
-      </section>
-
-      <TranscriptionPanel entries={transcript} isPlanning={isPlanning} />
-    </div>
+    <LessonPage
+      key={view.mountId}
+      sessionId={view.sessionId}
+      initialPrompt={view.initialPrompt}
+      onBack={openHome}
+      onSessionReady={(sessionId) => {
+        setView((current) => {
+          if (current.kind !== "lesson" || current.sessionId === sessionId) {
+            return current;
+          }
+          return { ...current, sessionId, initialPrompt: null };
+        });
+      }}
+    />
   );
 }

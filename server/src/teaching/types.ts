@@ -38,6 +38,7 @@ export type LessonEvent =
       index: number;
       speechId: string;
       naturalText: string;
+      transcriptSource: "voice_model" | "fallback";
       directive: SpeakDirective;
     }
   | {
@@ -52,4 +53,15 @@ export type LessonEvent =
       script: TeachingStep[];
       boardState: BoardState;
     }
-  | { type: "error"; message: string };
+  | {
+      type: "error";
+      message: string;
+      code?: string;
+      recoverable?: boolean;
+    };
+
+export interface LessonEventEnvelope {
+  turnId: string;
+  sequence: number;
+  event: LessonEvent;
+}

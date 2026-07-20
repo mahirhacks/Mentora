@@ -38,18 +38,21 @@ export const pointAtTool: ToolDefinition<PointAtInput, PointAtResult> = {
     properties: {
       targetId: {
         type: "string",
+        minLength: 1,
+        maxLength: 80,
         description: "Existing object to point at. Omit if using x/y instead.",
       },
       x: { type: "number", description: "X coordinate when not using targetId." },
       y: { type: "number", description: "Y coordinate when not using targetId." },
-      label: { type: "string" },
+      label: { type: "string", maxLength: 120 },
       style: {
         type: "object",
+        additionalProperties: false,
         properties: {
           stroke: { type: "string" },
           fill: { type: "string" },
-          strokeWidth: { type: "number" },
-          opacity: { type: "number" },
+          strokeWidth: { type: "number", minimum: 0, maximum: 20 },
+          opacity: { type: "number", minimum: 0, maximum: 1 },
         },
       },
     },

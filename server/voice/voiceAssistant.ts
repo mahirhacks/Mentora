@@ -24,6 +24,7 @@ Speak that script naturally as teacher audio.
 
 Rules:
 - Follow the prepared script closely. Do not invent new teaching content.
+- Do not restate or rephrase the final check question a second time.
 - Use user_prompt only for conversational context and tone.
 - Only refer to board objects that appear in observation.
 - Do not call tools or decide the next lesson step.
@@ -43,7 +44,6 @@ export class VoiceAssistant {
   private readonly model: string;
   private readonly apiKey: string;
   private readonly voice: RealtimeVoice;
-  private activeAbort: AbortController | null = null;
 
   constructor(
     private readonly client: OpenAI,
@@ -88,17 +88,11 @@ export class VoiceAssistant {
     };
   }
 
-  cancel() {
-    this.activeAbort?.abort();
-    this.activeAbort = null;
-  }
-
   async interpretSpeech(
     input: VoiceInterpreterInput,
     options?: { script?: string; signal?: AbortSignal },
   ): Promise<VoiceInterpretationResult> {
     const abort = new AbortController();
-    this.activeAbort = abort;
 
     const onExternalAbort = () => abort.abort();
     options?.signal?.addEventListener("abort", onExternalAbort, { once: true });
@@ -117,9 +111,6 @@ export class VoiceAssistant {
       return this.interpretWithTextFallback(input, options?.script ?? "", abort.signal);
     } finally {
       options?.signal?.removeEventListener("abort", onExternalAbort);
-      if (this.activeAbort === abort) {
-        this.activeAbort = null;
-      }
     }
   }
 
@@ -307,9 +298,11 @@ export class VoiceAssistant {
             return;
           }
 
+          const voiceTranscript = naturalText.trim();
           finish(
             {
-              naturalText: naturalText || script,
+              naturalText: voiceTranscript || script,
+              transcriptFromVoiceModel: voiceTranscript.length > 0,
               audioBase64: audioBuffer.toString("base64"),
               mimeType: "audio/pcm16",
             },
@@ -348,30 +341,16 @@ export class VoiceAssistant {
   }
 
   private async interpretWithTextFallback(
-    input: VoiceInterpreterInput,
+    _input: VoiceInterpreterInput,
     script: string,
     signal: AbortSignal,
   ): Promise<VoiceInterpretationResult> {
-    const completion = await this.client.chat.completions.create(
-      {
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: VOICE_PERFORMER_INSTRUCTIONS,
-          },
-          {
-            role: "user",
-            content: this.buildPerformerMessage(input, script),
-          },
-        ],
-        temperature: 0.4,
-      },
-      { signal },
-    );
-
-    const naturalText = completion.choices[0]?.message?.content?.trim() || script;
-
-    return { naturalText };
+    if (signal.aborted) {
+      throw new Error("Voice output cancelled.");
+    }
+    return {
+      naturalText: script,
+      transcriptFromVoiceModel: false,
+    };
   }
 }

@@ -1,14 +1,31 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import OpenAI from "openai";
 import { loadEnv } from "./env.js";
-import { getOrCreateSession, resetSession } from "./sessionStore.js";
+import {
+  applySessionBoardAction,
+  beginSessionTurn,
+  createNamedSession,
+  deleteSession,
+  finishSessionTurn,
+  getOrCreateSession,
+  getSessionSnapshot,
+  listSessions,
+  rememberUserPrompt,
+  resetSession,
+  setSessionTranscript,
+} from "./sessionStore.js";
+import type { UserBoardAction } from "./userBoardActions.js";
 import {
   VoiceAssistant,
   VoiceFilter,
   handleStudentTurn,
   transcribeStudentAudio,
 } from "../voice/index.js";
-import type { LessonEvent } from "./teaching/types.js";
+import type {
+  LessonEvent,
+  LessonEventEnvelope,
+} from "./teaching/types.js";
 
 const env = loadEnv();
 const openai = new OpenAI({ apiKey: env.openaiApiKey });
@@ -26,9 +43,13 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-function sendSseEvent(res: ServerResponse, event: LessonEvent) {
+function sendSseEvent(
+  res: ServerResponse,
+  envelope: LessonEventEnvelope,
+) {
+  const event = envelope.event;
   res.write(`event: ${event.type}\n`);
-  res.write(`data: ${JSON.stringify(event)}\n\n`);
+  res.write(`data: ${JSON.stringify(envelope)}\n\n`);
 }
 
 async function readBodyBuffer(req: IncomingMessage): Promise<Buffer> {
@@ -45,15 +66,21 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 }
 
 async function streamStudentTurn(
+  req: IncomingMessage,
   res: ServerResponse,
   input: {
     sessionId?: string;
+    turnId?: string;
     source: "voice" | "chat";
     text: string;
     enableVoice?: boolean;
   },
 ) {
   const { sessionId, session } = getOrCreateSession(input.sessionId);
+  rememberUserPrompt(sessionId, input.text);
+  const turnId = input.turnId ?? randomUUID();
+  const controller = beginSessionTurn(sessionId, turnId);
+  let sequence = 0;
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -62,27 +89,60 @@ async function streamStudentTurn(
     "Access-Control-Allow-Origin": "*",
   });
 
+  const onClose = () => {
+    if (!res.writableEnded) {
+      controller.abort();
+    }
+  };
+  res.once("close", onClose);
+
   try {
+    res.write("event: session\n");
+    res.write(
+      `data: ${JSON.stringify({ sessionId, turnId })}\n\n`,
+    );
+
     for await (const event of handleStudentTurn({
       session,
       openai,
       plannerModel: env.plannerModel,
+      turnId,
       turn: { source: input.source, text: input.text },
       voiceAssistant,
       enableVoice: input.enableVoice !== false,
+      signal: controller.signal,
     })) {
-      sendSseEvent(res, event);
+      if (controller.signal.aborted || res.destroyed) {
+        break;
+      }
+      sendSseEvent(res, {
+        turnId,
+        sequence,
+        event,
+      });
+      sequence += 1;
     }
 
-    res.write(`event: session\n`);
-    res.write(`data: ${JSON.stringify({ sessionId })}\n\n`);
-    res.end();
+    if (!res.destroyed) {
+      res.end();
+    }
   } catch (error) {
-    sendSseEvent(res, {
-      type: "error",
-      message: error instanceof Error ? error.message : String(error),
-    });
-    res.end();
+    if (!controller.signal.aborted && !res.destroyed) {
+      sendSseEvent(res, {
+        turnId,
+        sequence,
+        event: {
+          type: "error",
+          code: "turn_failed",
+          recoverable: true,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      res.end();
+    }
+  } finally {
+    res.off("close", onClose);
+    finishSessionTurn(sessionId, turnId);
   }
 }
 
@@ -92,7 +152,7 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     });
     res.end();
@@ -152,6 +212,7 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       text?: string;
       source?: "voice" | "chat";
       sessionId?: string;
+      turnId?: string;
       enableVoice?: boolean;
     };
 
@@ -160,8 +221,9 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       return;
     }
 
-    await streamStudentTurn(res, {
+    await streamStudentTurn(req, res, {
       sessionId: body.sessionId,
+      turnId: body.turnId,
       source: body.source ?? "chat",
       text: body.text.trim(),
       enableVoice: body.enableVoice,
@@ -173,6 +235,7 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     const body = (await readJsonBody(req)) as {
       prompt?: string;
       sessionId?: string;
+      turnId?: string;
       enableVoice?: boolean;
     };
 
@@ -181,12 +244,93 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       return;
     }
 
-    await streamStudentTurn(res, {
+    await streamStudentTurn(req, res, {
       sessionId: body.sessionId,
+      turnId: body.turnId,
       source: "chat",
       text: body.prompt.trim(),
       enableVoice: body.enableVoice,
     });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/sessions") {
+    sendJson(res, 200, { sessions: listSessions() });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/sessions") {
+    const body = (await readJsonBody(req)) as { title?: string };
+    const created = createNamedSession(body.title);
+    sendJson(res, 200, getSessionSnapshot(created.sessionId));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/api/sessions/")) {
+    const sessionId = url.pathname.replace("/api/sessions/", "").split("/")[0];
+    const snapshot = getSessionSnapshot(sessionId);
+    if (!snapshot) {
+      sendJson(res, 404, { error: "session not found" });
+      return;
+    }
+    sendJson(res, 200, snapshot);
+    return;
+  }
+
+  if (req.method === "PUT" && url.pathname.match(/^\/api\/sessions\/[^/]+\/transcript$/)) {
+    const sessionId = url.pathname.split("/")[3];
+    const body = (await readJsonBody(req)) as {
+      transcript?: Array<{
+        id: string;
+        kind: "student" | "speak";
+        text: string;
+        source?: "voice" | "chat";
+        speechId?: string;
+      }>;
+    };
+    if (!Array.isArray(body.transcript)) {
+      sendJson(res, 400, { error: "transcript array is required" });
+      return;
+    }
+    if (!setSessionTranscript(sessionId, body.transcript)) {
+      sendJson(res, 404, { error: "session not found" });
+      return;
+    }
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname.match(/^\/api\/sessions\/[^/]+\/board-actions$/)
+  ) {
+    const sessionId = url.pathname.split("/")[3];
+    const body = (await readJsonBody(req)) as {
+      action?: UserBoardAction;
+    };
+    if (!body.action || typeof body.action.type !== "string") {
+      sendJson(res, 400, { error: "board action is required" });
+      return;
+    }
+    try {
+      const boardState = applySessionBoardAction(sessionId, body.action);
+      if (!boardState) {
+        sendJson(res, 404, { error: "session not found" });
+        return;
+      }
+      sendJson(res, 200, { boardState });
+    } catch (error) {
+      sendJson(res, 400, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/sessions/")) {
+    const sessionId = url.pathname.replace("/api/sessions/", "");
+    deleteSession(sessionId);
+    sendJson(res, 200, { ok: true });
     return;
   }
 
@@ -196,17 +340,21 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       sendJson(res, 404, { error: "session not found" });
       return;
     }
-    voiceAssistant.cancel();
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (req.method === "GET" && url.pathname.startsWith("/api/session/")) {
     const sessionId = url.pathname.replace("/api/session/", "");
-    const { session } = getOrCreateSession(sessionId);
+    const snapshot = getSessionSnapshot(sessionId) ?? (() => {
+      const created = getOrCreateSession(sessionId);
+      return getSessionSnapshot(created.sessionId);
+    })();
     sendJson(res, 200, {
       sessionId,
-      boardState: session.boardState,
+      boardState: snapshot?.boardState,
+      title: snapshot?.title,
+      transcript: snapshot?.transcript ?? [],
     });
     return;
   }

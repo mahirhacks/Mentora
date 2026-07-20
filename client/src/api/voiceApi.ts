@@ -46,8 +46,13 @@ export async function streamStudentTurn(
   text: string,
   source: "voice" | "chat",
   sessionId: string | null,
-  onEvent: (event: LessonEvent) => void,
-  options?: { enableVoice?: boolean },
+  onEvent: (event: LessonEvent) => void | Promise<void>,
+  options?: {
+    enableVoice?: boolean;
+    turnId?: string;
+    signal?: AbortSignal;
+    onSession?: (sessionId: string) => void;
+  },
 ): Promise<string | null> {
   const response = await fetch("/api/student-turn", {
     method: "POST",
@@ -56,9 +61,15 @@ export async function streamStudentTurn(
       text,
       source,
       sessionId,
+      turnId: options?.turnId,
       enableVoice: options?.enableVoice ?? true,
     }),
+    signal: options?.signal,
   });
 
-  return consumeLessonStream(response, sessionId, onEvent);
+  return consumeLessonStream(response, sessionId, onEvent, {
+    signal: options?.signal,
+    turnId: options?.turnId,
+    onSession: options?.onSession,
+  });
 }

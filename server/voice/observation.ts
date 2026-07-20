@@ -21,6 +21,13 @@ function summarizeObject(object: BoardObject): string {
   if (object.kind === "pointer") {
     return object.label ? `pointer: ${object.label}` : "pointer";
   }
+  if (object.kind === "arrow") {
+    const from = object.fromId ?? "point";
+    const to = object.toId ?? "point";
+    return object.label
+      ? `arrow ${from} → ${to}: ${object.label}`
+      : `arrow ${from} → ${to}`;
+  }
   return String((object as BoardObject).kind);
 }
 
@@ -57,6 +64,19 @@ function inferRelationships(
       if (target) {
         relationships.push(
           `${object.id} points at ${object.targetId} (${summarizeObject(target)})`,
+        );
+      }
+    }
+
+    if (object.kind === "arrow") {
+      if (object.fromId && boardState.objects[object.fromId]) {
+        relationships.push(
+          `${object.id} starts at ${object.fromId} (${summarizeObject(boardState.objects[object.fromId])})`,
+        );
+      }
+      if (object.toId && boardState.objects[object.toId]) {
+        relationships.push(
+          `${object.id} points to ${object.toId} (${summarizeObject(boardState.objects[object.toId])})`,
         );
       }
     }
@@ -116,6 +136,8 @@ export function buildVerifiedObservation(
       kind: entry.kind,
       summary: entry.summary,
       region: entry.region,
+      createdBy: entry.createdBy,
+      updatedBy: entry.updatedBy,
     };
   }
 

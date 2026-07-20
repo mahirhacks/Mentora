@@ -3,6 +3,7 @@ import {
   getObject,
   placeRelativeBounds,
 } from "./boardState.js";
+import { fitBoundsInCanvas } from "./boundsGuard.js";
 import type { BoardState, RelativeRelation, ToolDefinition } from "./types.js";
 
 export interface PlaceRelativeInput {
@@ -31,13 +32,13 @@ export const placeRelativeTool: ToolDefinition<
     additionalProperties: false,
     required: ["objectId", "referenceId", "relation"],
     properties: {
-      objectId: { type: "string" },
-      referenceId: { type: "string" },
+      objectId: { type: "string", minLength: 1, maxLength: 80 },
+      referenceId: { type: "string", minLength: 1, maxLength: 80 },
       relation: {
         type: "string",
         enum: ["above", "below", "left", "right", "inside", "center"],
       },
-      offset: { type: "number", default: 12 },
+      offset: { type: "number", minimum: 0, maximum: 400, default: 12 },
     },
   },
   resultSchema: {
@@ -67,11 +68,13 @@ export const placeRelativeTool: ToolDefinition<
     const reference = getObject(state, input.referenceId);
     const subjectBounds = getBounds(subject);
     const referenceBounds = getBounds(reference);
-    const bounds = placeRelativeBounds(
-      referenceBounds,
-      subjectBounds,
-      input.relation,
-      input.offset ?? 12,
+    const bounds = fitBoundsInCanvas(
+      placeRelativeBounds(
+        referenceBounds,
+        subjectBounds,
+        input.relation,
+        input.offset ?? 12,
+      ),
     );
 
     const updated = {

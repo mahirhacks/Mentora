@@ -1,126 +1,184 @@
 # Mentora
 
-Voice-first AI teacher with a live drawing board. Mentora plans short teaching turns, draws on a 1280×720 canvas, and walks students through one concept at a time.
+Mentora is a voice-first visual AI tutor for beginners who are stuck in a
+loop of receiving more text when they need a concrete visual model.
 
-## Project structure
+Instead of retrieving a static diagram, Mentora uses GPT-5.6 to plan a short
+teaching turn around the learner's current question, constructs the visual
+with deterministic board tools, verifies the resulting board state, and
+performs the explanation with Realtime voice.
 
-| Package | Purpose |
-|---------|---------|
-| `client/` | React + Vite UI — canvas, chat, transcript |
-| `server/` | HTTP API, teaching planner, deterministic board tools |
-| `debug/` | Terminal REPL to test planner scripts without the browser |
+## What it demonstrates
 
-## Quick start
+The strongest current experience is foundational instruction that can be
+expressed with boxes, labels, equations, highlights, and simple shapes:
 
-### 1. Configure environment
+- Python variables shown as labelled containers;
+- fractions shown as equal regions;
+- basic arithmetic and algebra shown as short equations;
+- simple process or geometry diagrams.
+
+Each turn ends with one diagnostic question. A later answer is included in
+the planner context so the next turn can reuse the board and address the
+learner's response.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Input[Typed chat or recorded voice] --> Canonical[Canonical student text]
+  Canonical --> Session[TeachingSession and current BoardState]
+  Session --> Planner[GPT-5.6 teaching planner]
+  Planner --> Validator[Strict script validation]
+  Validator --> Preflight[Clone-only tool preflight]
+  Preflight --> SSE[Sequenced turn-scoped SSE]
+  SSE --> Canvas[Deterministic canvas]
+  SSE --> Realtime[Realtime voice performer]
+  Canvas --> Observation[Verified board observation]
+  Observation --> Realtime
+  Realtime --> Captions[PCM playback and captions]
+```
+
+The runtime keeps responsibilities deliberately narrow:
+
+- **GPT-5.6 planner:** chooses the teaching strategy, visual metaphor,
+  sequence, object references, and final diagnostic question.
+- **Local validator:** rejects malformed, oversized, reference-invalid, or
+  unsafe scripts before visible state changes.
+- **Ten deterministic tools:** create, divide, label, position, highlight,
+  point, arrow, write, erase, and reset board objects.
+- **Prepared-turn executor:** runs tools against a clone and stores verified
+  snapshots. Live state only receives a prepared snapshot from the current
+  turn.
+- **Realtime performer:** performs the exact validated teaching line against
+  verified board context. It does not invent lesson content or board facts.
+- **Client:** consumes monotonically sequenced events, waits for PCM playback,
+  rejects stale turns, and renders server-authoritative board snapshots.
+
+## Reliability boundaries
+
+Mentora is intentionally narrow for this build. It is demo-safe for beginner
+variables, fractions, and simple arithmetic. It can also support simple
+geometry and process diagrams when they fit the existing primitives.
+
+It does **not** currently promise:
+
+- dense biology diagrams, graph plotting, curves, or rich LaTeX;
+- advanced mathematical notation or proof layout;
+- multi-user accounts, cloud sync, or classroom management;
+- guaranteed quality for arbitrary open-ended or non-visual topics.
+
+Learning sessions persist locally as JSON under `data/sessions/` so you can
+resume a lesson from the home page after a server restart. There are no user
+accounts; files live on the machine running the server.
+
+## Run locally
+
+Requirements:
+
+- Node.js 20 or newer;
+- an OpenAI API key for live planning, transcription, and voice;
+- a modern browser with Web Audio and microphone support for voice input.
+
+Install all three packages:
+
+```bash
+npm run install:all
+```
+
+Copy the environment template:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and set your `OPENAI_API_KEY`.
+On Windows PowerShell:
 
-### 2. Install dependencies
-
-```bash
-cd server && npm install
-cd ../client && npm install
-cd ../debug && npm install
+```powershell
+Copy-Item .env.example .env
 ```
 
-### 3. Run the app
-
-In two terminals:
+Set `OPENAI_API_KEY` in `.env`, then start the server:
 
 ```bash
-# Terminal 1 — API server (port 3001)
 npm run server
+```
 
-# Terminal 2 — web UI (port 5173)
+In another terminal, start the client:
+
+```bash
 npm run client
 ```
 
-Open http://localhost:5173, type a topic or question, and Mentora will plan a teaching turn on the board.
+Open `http://localhost:5173`. The API listens on
+`http://localhost:3001` by default.
 
-## Scripts
+The home page lists previous learning sessions and a centered prompt
+(“Let’s learn something new today!”). Submitting a prompt opens a new
+interactive lesson; clicking a past session resumes its board and transcript.
 
-From the repo root:
+The microphone starts muted. Click it once to enable recording. Typed input
+uses the same planner, validation, canvas, and voice pipeline.
 
-| Command | Description |
-|---------|-------------|
-| `npm run server` | Start the teaching API server |
-| `npm run client` | Start the Vite dev server |
-| `npm run debug` | Open the terminal planner REPL |
-| `npm run tools` | Run board tool CLI (`list`, `demo`, `run`) |
+## Offline verification
 
-## Board tools
-
-The server exposes deterministic canvas tools the planner can call:
-
-- `create_shape`, `divide_region`, `label_in`, `place_relative`
-- `write_text`, `highlight`, `point_at`
-- `erase_object`, `reset_board`
-
-Test a tool from the CLI:
+No paid provider call is made by automated verification:
 
 ```bash
-cd server
-npm run tools -- list
-npm run tools -- demo
+npm run verify
 ```
 
-## Environment variables
+This command runs:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENAI_API_KEY` | — | Required. OpenAI API key |
-| `OPENAI_PLANNER_MODEL` | `gpt-5.6-sol` | Model for teaching script planning |
-| `OPENAI_REALTIME_MODEL` | `gpt-realtime-2.1-mini` | Reserved for future voice integration |
-| `PORT` | `3001` | Server port |
-| `VITE_DEMO_SAFE_MODE` | `false` | Client demo flag |
+1. TypeScript checks for `server`, `client`, and `debug`;
+2. Vitest suites for parser constraints, all board tools, prepared turns,
+   cancellation, SSE ordering, the client turn reducer, and golden lessons;
+3. production builds for the server and client.
 
-## Architecture
+The three golden fixtures are Python variables with a mocked adaptive second
+turn, a four-part fraction bar, and simple arithmetic. They prove deterministic
+orchestration and state reuse; they do not claim that every live model run is
+identical.
 
-1. **Planner** — GPT generates a short teaching script (`speak`, `tool`, `observe` steps) via `submit_teaching_script`.
-2. **Script player** — Server executes tool steps against an in-memory board state and streams events over SSE.
-3. **Canvas renderer** — Client draws shapes, text, labels, highlights, and pointers from board state.
-4. **Layout guards** — Placement and boundary clamping keep content inside the visible 1280×720 safe zone.
+## Codex development story
 
-## Voice architecture
+Codex was used as an engineering partner rather than as a code generator for
+one isolated feature. It helped:
 
-Voice and chat both enter the same canonical handler:
+1. trace the real voice/planner/tool/canvas path and identify drift between the
+   production and debug contracts;
+2. reproduce an off-canvas `place_relative` defect and a 13-step script that
+   bypassed the intended limit;
+3. replace partial mutation with strict validation and clone-only preflight;
+4. design deterministic regression fixtures for variables, fractions, and
+   arithmetic;
+5. add turn-scoped cancellation, stale-event filtering, and audio-aware event
+   ordering;
+6. audit the judge-facing UI and remove internal observation metadata.
 
-```ts
-handleStudentTurn({
-  source: "voice" | "chat",
-  text: canonicalText,
-});
-```
+Session resume and a small arrow tool were added after the core teaching loop
+was stable. The submission still focuses on generated visual pedagogy within a
+tested primitive set rather than unconstrained diagram generation.
 
-| Module | Role |
-|--------|------|
-| `server/voice/voiceFilter.ts` | Echo/noise cancellation capture constraints |
-| `server/voice/transcriber.ts` | `gpt-4o-mini-transcribe` for student audio → text |
-| `server/voice/voiceAssistant.ts` | Realtime voice performer (`gpt-realtime-2.1-mini`) |
-| `server/voice/handleStudentTurn.ts` | Canonical student-turn orchestration |
+The required Codex `/feedback` Session ID must be entered in the Build Week
+submission form after the final development session.
 
-**Boundary:** the decision model plans teaching and writes `voice_script` lines; the voice model only performs them against verified board state.
+## Repository layout
 
-Flow:
+- `client/` — React/Vite home + lesson UI, canvas, SSE consumer, PCM queue;
+- `server/` — HTTP API, planner, validation, session orchestration, voice;
+- `server/tools/` — deterministic board model and ten tool definitions;
+- `server/tests/` — offline safety and golden-lesson regression suite;
+- `data/sessions/` — local persisted lesson JSON (gitignored runtime data);
+- `debug/` — terminal planner harness using the production prompt and schema;
+- `REHEARSAL_RESULTS.md` — approved nine-run live planner/tool measurements;
+- `SUBMISSION.md` — recording script, Devpost copy, and final external checklist.
 
-1. Student voice → transcriber → `handleStudentTurn`
-2. Decision model returns tool steps + `voice_script` speak steps
-3. Tools execute on the deterministic board
-4. Verified board observation is built from actual state
-5. Voice assistant speaks using `{ user_prompt, observation }` plus the prepared script
+## Submission assets
 
-API endpoints:
-
-- `POST /api/student-turn` — unified chat/voice turn (SSE)
-- `POST /api/voice/transcribe` — audio → `{ source: "voice", text }`
-- `POST /api/voice/session` — ephemeral Realtime session for browser audio
-- `GET /api/voice/config` — capture + voice session config
+The final public video URL and screenshot/GIF should be added here after upload.
+The recording plan and copy are ready in [SUBMISSION.md](SUBMISSION.md).
 
 ## License
 
-Private hackathon project.
+Copyright © 2026 Mentora. All rights reserved. See [LICENSE](LICENSE).

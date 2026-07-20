@@ -1,7 +1,11 @@
 import OpenAI from "openai";
 import { toOpenAiTools } from "./openaiTools.js";
 import type { TeachingSession } from "./session.js";
-import { parseTeachingScript } from "./teachingScript.js";
+import {
+  parseTeachingScript,
+  validateTeachingScriptPayload,
+  type TeachingScriptValidationResult,
+} from "./teachingScript.js";
 import type { TeachingStep } from "./types.js";
 
 interface ToolCallDraft {
@@ -9,6 +13,16 @@ interface ToolCallDraft {
   name: string;
   argumentsText: string;
 }
+
+export interface TeachingPlannerInput {
+  session: TeachingSession;
+  signal?: AbortSignal;
+  validationFeedback?: string;
+}
+
+export type TeachingPlanner = (
+  input: TeachingPlannerInput,
+) => Promise<TeachingScriptValidationResult>;
 
 export async function planTeachingScript(
   client: OpenAI,
@@ -52,10 +66,42 @@ export async function streamTeachingScript(
   model: string,
   session: TeachingSession,
   onChunk?: (partialArguments: string) => void,
+  options?: { signal?: AbortSignal; validationFeedback?: string },
 ): Promise<TeachingStep[]> {
+  const result = await streamTeachingScriptResult(
+    client,
+    model,
+    session,
+    onChunk,
+    options,
+  );
+  return result.ok ? result.value : [];
+}
+
+export async function streamTeachingScriptResult(
+  client: OpenAI,
+  model: string,
+  session: TeachingSession,
+  onChunk?: (partialArguments: string) => void,
+  options?: { signal?: AbortSignal; validationFeedback?: string },
+): Promise<TeachingScriptValidationResult> {
+  const messages = options?.validationFeedback
+    ? [
+        ...session.messages,
+        {
+          role: "user" as const,
+          content: [
+            "The previous teaching script was rejected.",
+            "Repair only the listed validation problems and submit the full script again:",
+            options.validationFeedback,
+          ].join("\n"),
+        },
+      ]
+    : session.messages;
+
   const stream = await client.chat.completions.create({
     model,
-    messages: session.messages,
+    messages,
     tools: toOpenAiTools(),
     tool_choice: {
       type: "function",
@@ -63,7 +109,7 @@ export async function streamTeachingScript(
     },
     reasoning_effort: "none" as "low",
     stream: true,
-  });
+  }, { signal: options?.signal });
 
   const draft: ToolCallDraft = { id: "", name: "", argumentsText: "" };
 
@@ -88,13 +134,31 @@ export async function streamTeachingScript(
   }
 
   if (draft.name !== "submit_teaching_script" || !draft.argumentsText) {
-    return [];
+    return {
+      ok: false,
+      issues: [
+        {
+          field: "tool_call",
+          code: "missing_tool_call",
+          message: "Planner did not submit a teaching script.",
+        },
+      ],
+    };
   }
 
   try {
     const parsed = JSON.parse(draft.argumentsText) as Record<string, unknown>;
-    return parseTeachingScript(parsed);
+    return validateTeachingScriptPayload(parsed);
   } catch {
-    return [];
+    return {
+      ok: false,
+      issues: [
+        {
+          field: "tool_call.arguments",
+          code: "invalid_json",
+          message: "Planner returned invalid JSON arguments.",
+        },
+      ],
+    };
   }
 }

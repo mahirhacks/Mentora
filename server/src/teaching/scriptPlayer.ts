@@ -45,6 +45,7 @@ export async function* playTeachingScript(
         index,
         speechId: step.directive.speechId,
         naturalText: step.text ?? step.directive.voiceScript,
+        transcriptSource: "fallback",
         directive: step.directive,
       };
     }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchVoiceConfig } from "../api/voiceApi";
 
 const SPEECH_THRESHOLD = 0.018;
-const SILENCE_MS = 1_200;
+const SILENCE_MS = 900;
 const MIN_SPEECH_MS = 450;
 const MAX_RECORDING_MS = 20_000;
 
@@ -15,6 +15,7 @@ export type MicStatus =
 
 interface UseVoiceInputOptions {
   disabled?: boolean;
+  assistantSpeaking?: boolean;
   onUtterance: (blob: Blob) => Promise<void>;
   onBargeIn?: () => void;
 }
@@ -37,6 +38,7 @@ function pickRecorderMimeType() {
 
 export function useVoiceInput({
   disabled = false,
+  assistantSpeaking = false,
   onUtterance,
   onBargeIn,
 }: UseVoiceInputOptions) {
@@ -56,6 +58,7 @@ export function useVoiceInput({
   const isMutedRef = useRef(true);
   const isTranscribingRef = useRef(false);
   const isDisabledRef = useRef(false);
+  const assistantSpeakingRef = useRef(false);
   const onUtteranceRef = useRef(onUtterance);
 
   const onBargeInRef = useRef(onBargeIn);
@@ -75,6 +78,10 @@ export function useVoiceInput({
   useEffect(() => {
     isDisabledRef.current = disabled;
   }, [disabled]);
+
+  useEffect(() => {
+    assistantSpeakingRef.current = assistantSpeaking;
+  }, [assistantSpeaking]);
 
   const stopMonitor = useCallback(() => {
     if (monitorFrameRef.current !== null) {
@@ -214,7 +221,13 @@ export function useVoiceInput({
 
     const rms = Math.sqrt(sum / buffer.length);
     const now = Date.now();
-    const speaking = rms >= SPEECH_THRESHOLD;
+    // Echo cancellation handles most playback leakage. A slightly higher
+    // threshold while Mentora is speaking avoids self-barge-in from residual
+    // speaker audio without preventing a nearby student voice.
+    const threshold = assistantSpeakingRef.current
+      ? SPEECH_THRESHOLD * 1.8
+      : SPEECH_THRESHOLD;
+    const speaking = rms >= threshold;
 
     if (speaking) {
       lastSpeechAtRef.current = now;

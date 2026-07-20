@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { BoardObject, BoardState, Bounds, Point } from "./types.js";
 
 export function createBoardState(): BoardState {
-  return { objects: {}, revision: 0 };
+  return { objects: {}, revision: 0, activity: [] };
 }
 
 export function cloneBoardState(state: BoardState): BoardState {
@@ -17,11 +17,17 @@ export function commitObject(
   state: BoardState,
   object: BoardObject,
 ): BoardState {
+  const existing = state.objects[object.id];
   return {
     revision: state.revision + 1,
+    activity: state.activity ?? [],
     objects: {
       ...state.objects,
-      [object.id]: object,
+      [object.id]: {
+        ...object,
+        createdBy: object.createdBy ?? existing?.createdBy ?? "ai",
+        updatedBy: object.updatedBy ?? "ai",
+      },
     },
   };
 }
@@ -30,6 +36,7 @@ export function removeObject(state: BoardState, objectId: string): BoardState {
   const { [objectId]: _removed, ...rest } = state.objects;
   return {
     revision: state.revision + 1,
+    activity: state.activity ?? [],
     objects: rest,
   };
 }

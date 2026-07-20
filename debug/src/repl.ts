@@ -50,14 +50,49 @@ async function handleTeachingPrompt(
   }
 
   session.addScriptTurn(script, executionResults);
+  return { script, executionResults };
 }
 
 export async function runSinglePrompt(prompt: string) {
   const env = loadEnv();
   const client = new OpenAI({ apiKey: env.openaiApiKey });
   const session = new DebugSession(buildSystemPrompt(createBoardState()));
+  session.autoExecute = true;
 
-  await handleTeachingPrompt(client, env.plannerModel, session, prompt);
+  const result = await handleTeachingPrompt(
+    client,
+    env.plannerModel,
+    session,
+    prompt,
+  );
+  console.log(
+    `REHEARSAL_RESULT ${JSON.stringify({
+      valid: result.script.length > 0,
+      stepCount: result.script.length,
+      toolCount: result.script.filter((step) => step.kind === "tool").length,
+      toolFailures: result.executionResults.filter((entry) => !entry.ok)
+        .length,
+      clampedTools: result.executionResults.filter(
+        (entry) =>
+          entry.result &&
+          typeof entry.result === "object" &&
+          "clamped" in entry.result &&
+          entry.result.clamped === true,
+      ).length,
+      autoErasedObjects: result.executionResults.reduce(
+        (count, entry) =>
+          count +
+          (entry.result &&
+          typeof entry.result === "object" &&
+          "autoErased" in entry.result &&
+          Array.isArray(entry.result.autoErased)
+            ? entry.result.autoErased.length
+            : 0),
+        0,
+      ),
+      boardObjectCount: Object.keys(session.boardState.objects).length,
+    })}`,
+  );
 }
 
 export async function startRepl() {

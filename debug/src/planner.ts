@@ -143,7 +143,12 @@ export function printTeachingStep(
 ) {
   if (step.kind === "speak") {
     console.log(color(`\n${number}. SPEAK`, "green"));
-    console.log(color(`   🗣  "${step.text}"`, "green"));
+    console.log(color(`   Voice: "${step.directive.voiceScript}"`, "green"));
+    if (step.directive.finalQuestion) {
+      console.log(
+        color(`   Question: "${step.directive.finalQuestion}"`, "green"),
+      );
+    }
     return;
   }
 

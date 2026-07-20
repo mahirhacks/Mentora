@@ -3,6 +3,7 @@ import type { BoardState, ToolDefinition } from "./types.js";
 
 export interface EraseObjectInput {
   objectId: string;
+  allowUserObject?: boolean;
 }
 
 export interface EraseObjectResult {
@@ -17,13 +18,18 @@ export const eraseObjectTool: ToolDefinition<
 > = {
   name: "erase_object",
   description:
-    "Remove an object from the teaching board by id. Use this to delete outdated labels, temporary highlights, pointers, helper text, or any clutter before adding new content.",
+    "Remove an AI-created object from the teaching board by id. User-created objects are protected unless allowUserObject is true, which is only appropriate when the student explicitly asks to replace or remove their work.",
   inputSchema: {
     type: "object",
     additionalProperties: false,
     required: ["objectId"],
     properties: {
-      objectId: { type: "string" },
+      objectId: { type: "string", minLength: 1, maxLength: 80 },
+      allowUserObject: {
+        type: "boolean",
+        description:
+          "Permit deleting student-created work. Use only after an explicit student request.",
+      },
     },
   },
   resultSchema: {
@@ -37,6 +43,11 @@ export const eraseObjectTool: ToolDefinition<
   },
   execute(input, state) {
     const existing = getObject(state, input.objectId);
+    if (existing.createdBy === "user" && input.allowUserObject !== true) {
+      throw new Error(
+        `Object ${input.objectId} was created by the student and is protected.`,
+      );
+    }
     const nextState = removeObject(state, input.objectId);
 
     state.objects = nextState.objects;

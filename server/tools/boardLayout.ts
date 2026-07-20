@@ -15,6 +15,8 @@ export interface BoardLayoutEntry {
   id: string;
   kind: BoardObject["kind"];
   summary: string;
+  createdBy: "ai" | "user";
+  updatedBy: "ai" | "user";
   x: number;
   y: number;
   width: number;
@@ -60,6 +62,11 @@ function summarizeObject(object: BoardObject): string {
   if (object.kind === "pointer") {
     return `pointer${object.label ? ` "${object.label}"` : ""}`;
   }
+  if (object.kind === "arrow") {
+    const from = object.fromId ?? `(${object.from.x},${object.from.y})`;
+    const to = object.toId ?? `(${object.to.x},${object.to.y})`;
+    return `arrow ${from} → ${to}${object.label ? ` "${object.label}"` : ""}`;
+  }
   return (object as BoardObject).kind;
 }
 
@@ -72,6 +79,8 @@ export function buildBoardLayoutCatalog(
       id: object.id,
       kind: object.kind,
       summary: summarizeObject(object),
+      createdBy: object.createdBy ?? "ai",
+      updatedBy: object.updatedBy ?? object.createdBy ?? "ai",
       x: Math.round(x),
       y: Math.round(y),
       width: Math.round(width),
@@ -92,7 +101,7 @@ export function formatBoardLayoutForPrompt(boardState: BoardState): string {
   return catalog
     .map(
       (entry) =>
-        `- ${entry.id} [${entry.kind}] ${entry.summary} | bounds (x=${entry.x}, y=${entry.y}, w=${entry.width}, h=${entry.height}) | center (${entry.centerX}, ${entry.centerY}) | region ${entry.region}`,
+        `- ${entry.id} [${entry.kind}] ${entry.summary} | created-by ${entry.createdBy}, last-updated-by ${entry.updatedBy} | bounds (x=${entry.x}, y=${entry.y}, w=${entry.width}, h=${entry.height}) | center (${entry.centerX}, ${entry.centerY}) | region ${entry.region}`,
     )
     .join("\n");
 }
@@ -114,6 +123,9 @@ export function formatBoardStateForPrompt(boardState: BoardState): string {
       },
       revision: boardState.revision,
       objectCount: Object.keys(boardState.objects).length,
+      recentUserActions: (boardState.activity ?? [])
+        .filter((entry) => entry.actor === "user")
+        .slice(-12),
       layoutCatalog: buildBoardLayoutCatalog(boardState),
       objects: boardState.objects,
     },

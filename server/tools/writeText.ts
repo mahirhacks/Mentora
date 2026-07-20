@@ -83,11 +83,16 @@ export const writeTextTool: ToolDefinition<WriteTextInput, WriteTextResult> = {
     additionalProperties: false,
     required: ["text", "x", "y"],
     properties: {
-      id: { type: "string", description: "Optional stable object id." },
-      text: { type: "string" },
+      id: {
+        type: "string",
+        minLength: 1,
+        maxLength: 80,
+        description: "Optional stable object id.",
+      },
+      text: { type: "string", minLength: 1, maxLength: 600 },
       x: { type: "number", description: "Anchor x position in canvas pixels." },
       y: { type: "number", description: "Anchor y position in canvas pixels." },
-      fontSize: { type: "number", default: 18 },
+      fontSize: { type: "number", minimum: 8, maximum: 72, default: 18 },
       fontWeight: {
         type: "string",
         enum: ["normal", "bold"],
@@ -101,15 +106,18 @@ export const writeTextTool: ToolDefinition<WriteTextInput, WriteTextResult> = {
       },
       maxWidth: {
         type: "number",
+        minimum: 20,
+        maximum: 1184,
         description: "Optional wrap width for multi-line text estimation.",
       },
       style: {
         type: "object",
+        additionalProperties: false,
         properties: {
           stroke: { type: "string" },
           fill: { type: "string", description: "Text color." },
-          strokeWidth: { type: "number" },
-          opacity: { type: "number" },
+          strokeWidth: { type: "number", minimum: 0, maximum: 20 },
+          opacity: { type: "number", minimum: 0, maximum: 1 },
         },
       },
     },

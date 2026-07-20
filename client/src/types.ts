@@ -5,6 +5,22 @@ export interface SpeakDirective {
   finalQuestion: string | null;
 }
 
+export interface VerifiedBoardObservation {
+  objects: Record<
+    string,
+    {
+      id: string;
+      kind: string;
+      summary: string;
+      region: string;
+      createdBy: BoardActor;
+      updatedBy: BoardActor;
+    }
+  >;
+  relationships: string[];
+  layoutSummary: string;
+}
+
 export type ShapeKind = "rectangle" | "ellipse" | "line" | "polygon";
 
 export interface Bounds {
@@ -19,6 +35,22 @@ export interface BoardStyle {
   fill?: string;
   strokeWidth?: number;
   opacity?: number;
+}
+
+export type BoardActor = "ai" | "user";
+
+export interface BoardObjectProvenance {
+  createdBy?: BoardActor;
+  updatedBy?: BoardActor;
+}
+
+export interface BoardActivity {
+  id: string;
+  actor: BoardActor;
+  action: "create" | "draw" | "move" | "erase" | "arrow" | "point";
+  objectIds: string[];
+  summary: string;
+  revision: number;
 }
 
 export interface Point {
@@ -72,18 +104,54 @@ export interface PointerObject extends BoardObjectBase {
   label?: string;
 }
 
+export interface ArrowObject extends BoardObjectBase {
+  kind: "arrow";
+  from: Point;
+  to: Point;
+  fromId?: string;
+  toId?: string;
+  label?: string;
+  bidirectional?: boolean;
+}
+
 export type BoardObject =
-  | ShapeObject
-  | LabelObject
-  | TextObject
-  | DivisionObject
-  | HighlightObject
-  | PointerObject;
+  (
+    | ShapeObject
+    | LabelObject
+    | TextObject
+    | DivisionObject
+    | HighlightObject
+    | PointerObject
+    | ArrowObject
+  ) & BoardObjectProvenance;
 
 export interface BoardState {
   objects: Record<string, BoardObject>;
   revision: number;
+  activity?: BoardActivity[];
 }
+
+export type UserBoardAction =
+  | {
+      type: "shape";
+      shape: "rectangle" | "circle" | "triangle";
+      from: Point;
+      to: Point;
+    }
+  | { type: "pencil"; points: Point[] }
+  | { type: "arrow"; from: Point; to: Point }
+  | { type: "point"; at: Point; targetId?: string }
+  | { type: "move"; objectId: string; dx: number; dy: number }
+  | { type: "erase"; objectId: string };
+
+export type UserBoardTool =
+  | "pointer"
+  | "pencil"
+  | "rectangle"
+  | "triangle"
+  | "circle"
+  | "arrow"
+  | "eraser";
 
 export type TeachingStep =
   | { kind: "speak"; directive: SpeakDirective; text?: string }
@@ -106,12 +174,18 @@ export type LessonEvent =
       error?: string;
       boardState: BoardState;
     }
-  | { type: "observe_context"; index: number; context: string }
+  | {
+      type: "observe_context";
+      index: number;
+      context: string;
+      observation?: VerifiedBoardObservation;
+    }
   | {
       type: "speech_interpreted";
       index: number;
       speechId: string;
       naturalText: string;
+      transcriptSource: "voice_model" | "fallback";
     }
   | {
       type: "voice_audio";
@@ -121,4 +195,15 @@ export type LessonEvent =
       mimeType: string;
     }
   | { type: "done"; script: TeachingStep[]; boardState: BoardState }
-  | { type: "error"; message: string };
+  | {
+      type: "error";
+      message: string;
+      code?: string;
+      recoverable?: boolean;
+    };
+
+export interface LessonEventEnvelope {
+  turnId: string;
+  sequence: number;
+  event: LessonEvent;
+}

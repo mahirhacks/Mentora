@@ -1,9 +1,11 @@
 import type OpenAI from "openai";
 import {
+  cloneBoardState,
   createBoardState,
   runTool,
   type BoardState,
 } from "../../tools/index.js";
+import { assertBoardPostconditions } from "../../tools/postconditions.js";
 import { canvasBoundaryGuide } from "../../tools/boundsGuard.js";
 import {
   BOARD_HEIGHT,
@@ -24,6 +26,7 @@ export interface ScriptExecutionResult {
 export class TeachingSession {
   readonly messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
   boardState: BoardState = createBoardState();
+  private activeTurnId: string | null = null;
 
   constructor(private readonly systemPrompt: string) {
     this.messages.push({ role: "system", content: this.systemPrompt });
@@ -33,6 +36,29 @@ export class TeachingSession {
     this.messages.length = 0;
     this.messages.push({ role: "system", content: this.systemPrompt });
     this.boardState = createBoardState();
+    this.activeTurnId = null;
+  }
+
+  beginTurn(turnId: string) {
+    this.activeTurnId = turnId;
+  }
+
+  isTurnActive(turnId: string) {
+    return this.activeTurnId === turnId;
+  }
+
+  commitPreparedBoard(turnId: string, boardState: BoardState): boolean {
+    if (!this.isTurnActive(turnId)) {
+      return false;
+    }
+    this.boardState = structuredClone(boardState);
+    return true;
+  }
+
+  finishTurn(turnId: string) {
+    if (this.activeTurnId === turnId) {
+      this.activeTurnId = null;
+    }
   }
 
   refreshSystemPrompt() {
@@ -44,6 +70,12 @@ export class TeachingSession {
 
   addUserPrompt(prompt: string) {
     this.messages.push({ role: "user", content: prompt });
+  }
+
+  discardLastUserPrompt() {
+    if (this.messages.at(-1)?.role === "user") {
+      this.messages.pop();
+    }
   }
 
   addScriptTurn(
@@ -84,7 +116,23 @@ export class TeachingSession {
     stepIndex: number,
     step: Extract<TeachingStep, { kind: "tool" }>,
   ): ScriptExecutionResult {
-    const outcome = runTool(step.toolName, step.input, this.boardState);
+    const draft = cloneBoardState(this.boardState);
+    const outcome = runTool(step.toolName, step.input, draft);
+
+    if (outcome.ok) {
+      const postconditions = assertBoardPostconditions(draft);
+      if (!postconditions.ok) {
+        return {
+          stepIndex,
+          step,
+          ok: false,
+          error: postconditions.error,
+        };
+      }
+
+      this.boardState = draft;
+    }
+
     return {
       stepIndex,
       step,
@@ -125,13 +173,36 @@ ${canvasBoundaryGuide()}
 
 Before every tool step:
 1. Read the layout catalog below.
-2. Reuse existing object ids when updating the same concept.
-3. Place new content in open space using the catalog to avoid overlap.
-4. Leave at least 24px between unrelated text blocks.
-5. Stack code or text lines vertically with at least 36px between baselines.
-6. Use erase_object to remove outdated or unimportant objects before drawing replacements.
-7. Use reset_board to wipe the entire canvas when starting a completely new diagram or topic.
-8. The board executor also auto-clears overlapping text, labels, highlights, and pointers when placing new content in the same area. Shapes and diagram structure are preserved unless explicitly erased.
+2. Treat every preceding canvas edit as if you just called a board-view tool:
+   reconstruct the projected object ids and bounds before choosing the next edit.
+3. Reuse existing object ids when updating the same concept.
+4. Place new content in open space using the projected catalog to avoid overlap.
+5. Leave at least 24px between unrelated text blocks.
+6. Stack code or text lines vertically with at least 36px between baselines.
+7. Use erase_object to remove outdated or unimportant objects before drawing replacements.
+8. Use reset_board to wipe the entire canvas when starting a completely new diagram or topic.
+9. The executor inspects the board after every canvas edit. Unrelated collisions
+   or implicit deletion of educational text fail the whole script and are sent
+   back for repair. Only temporary highlights and pointers may be replaced automatically.
+10. To circle, mark, or emphasize something that already exists, use highlight
+    or point_at. Never cover it with a filled shape. Highlights are stroke-only.
+11. To connect two existing board objects or show flow from one idea to another,
+    use arrow with fromId and toId. Prefer object-to-object arrows over freehand lines.
+12. If a location is occupied, prefer reusing the existing object id or explicitly
+    erase obsolete text before placing the replacement. Never stack a new text
+    object on top of an old one.
+13. Board objects include createdBy and updatedBy provenance. Treat objects marked
+    "user" as deliberate student work, not as your own drawing.
+14. recentUserActions lists the student's latest direct canvas edits, including
+    erased objects that no longer appear. Acknowledge or reason about those edits
+    when relevant. Do not silently overwrite student work; preserve it unless the
+    student's request clearly asks you to correct or replace it.
+15. erase_object protects student-created objects by default. Only set
+    allowUserObject=true when the student explicitly asks you to remove or replace
+    that work. reset_board also preserves student work unless includeUserObjects=true.
+16. When the request says the student changed the canvas, inspect
+    recentUserActions and include an observe step for the relevant user-created
+    object ids before speaking. Do not redraw the student's work just to inspect it.
 
 Good reasons to erase:
 - old helper labels no longer needed
@@ -142,6 +213,22 @@ Good reasons to erase:
 ## Your task
 
 Create ONE SHORT TEACHING TURN for the student's current request.
+
+Teach one concept or repair one misconception at a time. Do not generate an
+entire lesson or a long monologue.
+
+Adapt from the previous turn:
+- If the student is correct, confirm briefly and advance one small step.
+- If the student is partially correct, preserve the correct part and address one gap.
+- If the student is incorrect, diagnose one misconception and give one small remediation.
+
+Prefer a useful visual metaphor over repeated prose, but tool steps are optional
+when a visual would not improve understanding. The current reliable visual
+vocabulary is boxes, labels, equations, highlights, pointers, arrows that
+connect objects, simple polygons, and basic process layouts. Do not attempt dense or decorative diagrams.
+
+Every spoken line must be short and must only mention objects already present
+in verified board state. Reuse existing objects whenever possible.
 
 ## Step types
 
@@ -154,6 +241,8 @@ The voice performer only receives:
 
 Write voice_script as natural spoken teacher audio that responds to the student and matches the board.
 Do not rely on the voice performer to invent teaching content.
+On the final speak step, put the single check question in "question". Do not also end
+voice_script with a different wording of that same question — Mentora should ask it once.
 
 Each speak step must include:
 - speech_id: stable id for this utterance
@@ -179,12 +268,15 @@ One deterministic board action using one available board tool.
 An INTERNAL assertion about what must exist on the board after drawing.
 Observe steps are NOT spoken aloud.
 Use board_references when the observation should verify specific object ids.
+Insert an observe step after each meaningful group of edits and before speaking
+about those edits. List every object the next explanation depends on.
 
 ## Script size
 
 - Target 4 to 10 total steps.
 - Hard maximum: 12 steps.
 - The final step MUST be a speak step with one clear question.
+- No earlier speak step may contain a question.
 
 ## Available board tools
 

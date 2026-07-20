@@ -163,8 +163,64 @@ function drawPointer(context: CanvasRenderingContext2D, object: BoardObject) {
   }
 }
 
+function drawArrowHead(
+  context: CanvasRenderingContext2D,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  size = 12,
+) {
+  const angle = Math.atan2(to.y - from.y, to.x - from.x);
+  context.beginPath();
+  context.moveTo(to.x, to.y);
+  context.lineTo(
+    to.x - size * Math.cos(angle - Math.PI / 6),
+    to.y - size * Math.sin(angle - Math.PI / 6),
+  );
+  context.lineTo(
+    to.x - size * Math.cos(angle + Math.PI / 6),
+    to.y - size * Math.sin(angle + Math.PI / 6),
+  );
+  context.closePath();
+  context.fill();
+  context.stroke();
+}
+
+function drawArrow(context: CanvasRenderingContext2D, object: BoardObject) {
+  if (object.kind !== "arrow") {
+    return;
+  }
+
+  const color = object.style?.stroke ?? "#2563eb";
+  context.strokeStyle = color;
+  context.fillStyle = object.style?.fill ?? color;
+  context.lineWidth = object.style?.strokeWidth ?? 2.5;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.globalAlpha = object.style?.opacity ?? 1;
+
+  context.beginPath();
+  context.moveTo(object.from.x, object.from.y);
+  context.lineTo(object.to.x, object.to.y);
+  context.stroke();
+
+  drawArrowHead(context, object.from, object.to);
+  if (object.bidirectional) {
+    drawArrowHead(context, object.to, object.from);
+  }
+
+  if (object.label) {
+    const midX = (object.from.x + object.to.x) / 2;
+    const midY = (object.from.y + object.to.y) / 2;
+    context.font = "14px Inter, system-ui, sans-serif";
+    context.fillStyle = "#0f172a";
+    context.textAlign = "center";
+    context.fillText(object.label, midX, midY - 10);
+    context.textAlign = "left";
+  }
+}
+
 function clearCanvas(context: CanvasRenderingContext2D, width: number, height: number) {
-  context.fillStyle = "#ffffff";
+  context.fillStyle = "#f7f7f8";
   context.fillRect(0, 0, width, height);
 }
 
@@ -180,6 +236,7 @@ export function drawBoardState(
   const layers: BoardObject["kind"][] = [
     "shape",
     "division",
+    "arrow",
     "label",
     "text",
     "highlight",
@@ -198,6 +255,9 @@ export function drawBoardState(
           break;
         case "division":
           drawDivision(context, object);
+          break;
+        case "arrow":
+          drawArrow(context, object);
           break;
         case "label":
         case "text":

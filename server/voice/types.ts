@@ -22,6 +22,8 @@ export interface VerifiedBoardObservation {
       kind: string;
       summary: string;
       region: string;
+      createdBy: "ai" | "user";
+      updatedBy: "ai" | "user";
     }
   >;
   relationships: string[];
@@ -35,8 +37,16 @@ export interface VoiceInterpreterInput {
 
 export interface VoiceInterpretationResult {
   naturalText: string;
+  transcriptFromVoiceModel: boolean;
   audioBase64?: string;
   mimeType?: string;
+}
+
+export interface VoicePerformer {
+  interpretSpeech(
+    input: VoiceInterpreterInput,
+    options?: { script?: string; signal?: AbortSignal },
+  ): Promise<VoiceInterpretationResult>;
 }
 
 export interface VoiceFilterConfig {
@@ -114,6 +124,9 @@ export function isSpeakDirective(value: unknown): value is SpeakDirective {
     typeof directive.voiceScript === "string" &&
     directive.voiceScript.trim().length > 0 &&
     Array.isArray(directive.boardObjectIds) &&
+    directive.boardObjectIds.every(
+      (objectId) => typeof objectId === "string" && objectId.length > 0,
+    ) &&
     (directive.finalQuestion === null ||
       typeof directive.finalQuestion === "string")
   );

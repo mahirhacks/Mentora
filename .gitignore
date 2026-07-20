@@ -37,7 +37,9 @@ Desktop.ini
 # Test / coverage
 coverage/
 
-# Temp files
-tmp/
-*.tmp
-.cache/
+# Persisted learning sessions (local JSON; do not commit)
+data/
+server/data/
+
+# Local scratch notes
+temp_prompts.txt

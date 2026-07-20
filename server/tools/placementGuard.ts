@@ -2,8 +2,6 @@ import { removeObject } from "./boardState.js";
 import type { BoardObject, BoardState, Bounds } from "./types.js";
 
 const DEFAULT_OVERLAY_KINDS = new Set<BoardObject["kind"]>([
-  "text",
-  "label",
   "highlight",
   "pointer",
 ]);
