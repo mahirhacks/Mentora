@@ -14,6 +14,7 @@ export function createInitialRuntime(): LessonRuntimeState {
     studentBoardActive: false,
     pendingStudentStrokeIds: [],
     boardObjectIds: [],
+    boardVersion: 0,
     startedAt: Date.now(),
   };
 }

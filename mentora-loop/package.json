@@ -1,0 +1,16 @@
+{
+  "name": "@mentora/mentora-loop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Detachable Decision → TeachingConductor → Realtime coordination test loop",
+  "scripts": {
+    "test": "vitest run",
+    "test:loop": "tsx src/runner.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}

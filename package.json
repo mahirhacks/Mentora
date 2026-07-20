@@ -5,16 +5,19 @@
   "workspaces": [
     "client",
     "server",
-    "shared"
+    "shared",
+    "mentora-loop"
   ],
   "scripts": {
     "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
     "smoke": "npm run smoke -w server",
-    "test": "npm run test -w shared --if-present && npm run test -w server --if-present && npm run test -w client --if-present"
+    "test": "npm run test -w shared --if-present && npm run test -w server --if-present && npm run test -w client --if-present",
+    "test:mentora-loop": "tsx mentora-loop/src/runner.ts"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
+    "tsx": "^4.23.1",
     "typescript": "^5.9.2"
   }
 }

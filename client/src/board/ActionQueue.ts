@@ -8,10 +8,12 @@ import {
   BoardActionExecutor,
   notFoundResult,
 } from "./ActionExecutor";
+import { normalizeBoardActions } from "./boardLayoutEngine";
 import type { BoardObjectRegistry } from "./ObjectRegistry";
 
 type QueueItem = {
   actions: BoardAction[];
+  author: "ai" | "student";
   resolve: (result: BoardApplyActionsResult) => void;
 };
 
@@ -55,7 +57,11 @@ export class BoardActionQueue {
     }
   }
 
-  applyActions(raw: unknown): Promise<BoardApplyActionsResult> {
+  applyActions(
+    raw: unknown,
+    opts?: { author?: "ai" | "student" },
+  ): Promise<BoardApplyActionsResult> {
+    const author = opts?.author ?? "ai";
     const parsed = BoardApplyActionsArgsSchema.safeParse(raw);
     if (!parsed.success) {
       return Promise.resolve({
@@ -93,6 +99,7 @@ export class BoardActionQueue {
         action.type === "write_equation";
       if (createsId && "objectId" in action) {
         const id = action.objectId;
+        if (!id) continue;
         if (seen.has(id)) {
           return Promise.resolve({
             success: false,
@@ -106,8 +113,11 @@ export class BoardActionQueue {
       }
     }
 
+    // Wrap text, clamp coords, and fit shapes before pixels hit the canvas.
+    const normalized = normalizeBoardActions(actions);
+
     return new Promise((resolve) => {
-      this.queue.push({ actions, resolve });
+      this.queue.push({ actions: normalized, author, resolve });
       void this.pump();
     });
   }
@@ -120,12 +130,11 @@ export class BoardActionQueue {
     while (this.queue.length > 0) {
       const item = this.queue.shift()!;
       const applied: string[] = [];
+      this.executor.setAuthor(item.author);
       try {
         for (const action of item.actions) {
           if (this.cancelled) break;
           const label = action.type;
-          // Focus actions return immediately (hold TTL is async); still await
-          // so OBJECT_NOT_FOUND and other sync failures are caught here.
           await this.executor.executeOne(action);
           applied.push(label);
         }
@@ -156,6 +165,8 @@ export class BoardActionQueue {
             issues: [e.message ?? String(err)],
           });
         }
+      } finally {
+        this.executor.setAuthor("ai");
       }
     }
 

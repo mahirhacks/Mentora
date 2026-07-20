@@ -1,18 +1,23 @@
 import { Router } from "express";
 import {
+  DecideRequestSchema,
   LessonPlanSchema,
   fallbackSquareLesson,
   makeGenericFallbackLesson,
   isSquareFormulaTopic,
+  normalizeTopic,
+  makeFallbackTeachingBeat,
 } from "@mentora/shared";
 import { planLesson, replanLesson } from "../services/openaiPlanner.js";
+import { decideTeachingBeat } from "../services/openaiDecide.js";
 
 export const lessonRouter = Router();
 
 function fallbackForTopic(topic: string) {
-  return isSquareFormulaTopic(topic)
+  const subject = normalizeTopic(topic);
+  return isSquareFormulaTopic(subject)
     ? fallbackSquareLesson
-    : makeGenericFallbackLesson(topic);
+    : makeGenericFallbackLesson(subject);
 }
 
 lessonRouter.post("/plan", async (req, res) => {
@@ -35,6 +40,42 @@ lessonRouter.post("/plan", async (req, res) => {
     const topic = String(req.body?.topic ?? "Expanding (a+b)^2");
     res.status(500).json({
       plan: fallbackForTopic(topic),
+      source: "fallback",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+lessonRouter.post("/decide", async (req, res) => {
+  try {
+    const parsed = DecideRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const beat = makeFallbackTeachingBeat({
+        studentAnswer: String(req.body?.studentAnswer ?? ""),
+        topic: String(req.body?.topic ?? "topic"),
+        checkQuestion: req.body?.checkQuestion
+          ? String(req.body.checkQuestion)
+          : undefined,
+        fallbackExplanation: req.body?.fallbackExplanation
+          ? String(req.body.fallbackExplanation)
+          : undefined,
+      });
+      res.json({
+        beat,
+        source: "fallback",
+        error: parsed.error.message,
+      });
+      return;
+    }
+    const result = await decideTeachingBeat(parsed.data);
+    res.json(result);
+  } catch (err) {
+    const beat = makeFallbackTeachingBeat({
+      studentAnswer: String(req.body?.studentAnswer ?? ""),
+      topic: String(req.body?.topic ?? "topic"),
+    });
+    res.status(500).json({
+      beat,
       source: "fallback",
       error: err instanceof Error ? err.message : String(err),
     });

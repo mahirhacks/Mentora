@@ -113,11 +113,12 @@ export const PointAtActionSchema = BaseAction.extend({
   holdMs: z.number().int().positive().max(20000).default(3500),
 });
 
-/** Red teaching pointer at absolute pixel coords (while explaining). */
+/** Red teaching pointer — prefer objectId (Set-of-Marks); x/y only as escape hatch. */
 export const ShowPointerActionSchema = BaseAction.extend({
   type: z.literal("show_pointer"),
-  x: z.number(),
-  y: z.number(),
+  objectId: z.string().min(1).optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
   holdMs: z.number().int().positive().max(20000).default(3500),
 });
 
@@ -157,6 +158,39 @@ export const BoardApplyActionsArgsSchema = z.object({
 });
 
 export type BoardApplyActionsArgs = z.infer<typeof BoardApplyActionsArgsSchema>;
+
+/** Zone-based placement — model picks zone + content; client assigns pixels. */
+export const BoardPlaceBlockSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("heading"),
+    text: z.string().min(1).max(200),
+    objectId: z.string().min(1).max(64),
+  }),
+  z.object({
+    kind: z.literal("body"),
+    text: z.string().min(1).max(500),
+    objectId: z.string().min(1).max(64),
+  }),
+  z.object({
+    kind: z.literal("bullets"),
+    lines: z.array(z.string().min(1).max(200)).min(1).max(8),
+    objectIdPrefix: z.string().min(1).max(48),
+  }),
+  z.object({
+    kind: z.literal("callout"),
+    text: z.string().min(1).max(400),
+    objectId: z.string().min(1).max(64),
+  }),
+]);
+
+export const BoardPlaceArgsSchema = z.object({
+  zone: z.enum(["title", "left", "right", "bottom"]),
+  clearZone: z.boolean().optional().default(false),
+  blocks: z.array(BoardPlaceBlockSchema).min(1).max(12),
+});
+
+export type BoardPlaceArgs = z.infer<typeof BoardPlaceArgsSchema>;
+export type BoardPlaceBlock = z.infer<typeof BoardPlaceBlockSchema>;
 
 export const BoardApplyActionsResultSchema = z.object({
   success: z.boolean(),

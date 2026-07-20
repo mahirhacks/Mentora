@@ -13,6 +13,8 @@ export type SpatialObject = {
   box: PixelBox;
   /** Short content hint for the model */
   content?: string;
+  /** Who created this object — never treat ai as student work. */
+  author: "ai" | "student";
 };
 
 export type BoardSpatialMap = {
@@ -28,10 +30,17 @@ export type BoardSpatialMap = {
 };
 
 function estimateTextSize(text: string, fontSize: number): { w: number; h: number } {
-  const chars = Math.max(1, text.length);
+  const lines = text.split("\n");
+  const w = Math.min(
+    BOARD_WIDTH - 80,
+    Math.max(
+      1,
+      ...lines.map((line) => Math.ceil(Math.max(1, line.length) * fontSize * 0.56)),
+    ),
+  );
   return {
-    w: Math.min(BOARD_WIDTH - 80, Math.ceil(chars * fontSize * 0.58)),
-    h: Math.ceil(fontSize * 1.35),
+    w,
+    h: Math.ceil(lines.length * fontSize * 1.35),
   };
 }
 
@@ -88,14 +97,13 @@ function contentOf(obj: BoardObject): string | undefined {
   return undefined;
 }
 
-/** Candidate free zones the model can place into (pixel boxes). */
+/** Candidate free zones aligned with board_place layout zones. */
 function computeFreeSlots(occupied: PixelBox[]): Array<PixelBox & { hint: string }> {
   const candidates: Array<PixelBox & { hint: string }> = [
-    { x: 60, y: 50, w: 420, h: 260, hint: "left diagram zone" },
-    { x: 520, y: 50, w: 520, h: 200, hint: "top-right title/formula zone" },
-    { x: 520, y: 270, w: 520, h: 220, hint: "mid-right explanation zone" },
-    { x: 60, y: 340, w: 420, h: 220, hint: "lower-left zone" },
-    { x: 60, y: 520, w: 980, h: 70, hint: "bottom strip for summary" },
+    { x: 60, y: 36, w: 980, h: 72, hint: "title zone" },
+    { x: 60, y: 120, w: 460, h: 390, hint: "left diagram zone" },
+    { x: 560, y: 120, w: 480, h: 390, hint: "right explanation zone" },
+    { x: 60, y: 528, w: 980, h: 64, hint: "bottom summary zone" },
   ];
 
   return candidates
@@ -119,6 +127,7 @@ export function buildBoardSpatialMap(
     type: obj.type,
     box: objectPixelBox(obj),
     content: contentOf(obj),
+    author: obj.layer === "student" ? "student" : "ai",
   }));
 
   const inkBoxes: PixelBox[] = studentStrokes
@@ -177,7 +186,10 @@ export function formatBoardSpatialMap(map: BoardSpatialMap): string {
     `origin: top-left (+x right, +y down)`,
     `safe area: ${boxRange(map.safeArea)}`,
     `write_text/write_equation (x,y) = TOP-LEFT of text. draw_rectangle (x,y)=TOP-LEFT. draw_circle (x,y)=CENTER.`,
-    `pointer: use point_at {objectId} OR show_pointer {x,y} for the red glowing teaching dot while you explain.`,
+    `prose: prefer board_place zones (title|left|right|bottom) — client wraps text and sizes callout boxes.`,
+    `diagrams: prefer board_diagram (create_shape, divide_region, place_relative, point_at by id) — never invent x/y.`,
+    `pointer: use point_at {objectId} OR show_pointer {objectId} for the red glowing teaching dot while you explain.`,
+    `AUTHORSHIP: [ai] = Mentora drew it (NOT student work). [student] = student placed it. student ink = freehand only.`,
   ];
 
   if (!map.objects.length) {
@@ -189,7 +201,7 @@ export function formatBoardSpatialMap(map: BoardSpatialMap): string {
       const cx = Math.round(o.box.x + o.box.w / 2);
       const cy = Math.round(o.box.y + o.box.h / 2);
       lines.push(
-        `- ${o.id} (${o.type}): ${boxRange(o.box)} | center ${cx},${cy}${c}`,
+        `- [${o.author}] ${o.id} (${o.type}): ${boxRange(o.box)} | center ${cx},${cy}${c}`,
       );
     }
   }

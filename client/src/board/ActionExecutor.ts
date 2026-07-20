@@ -31,17 +31,23 @@ export class BoardActionExecutor {
     y: null,
     until: 0,
   };
+  private author: "ai" | "student" = "ai";
 
   constructor(
     private registry: BoardObjectRegistry,
     private hooks: ExecutorHooks,
   ) {}
 
+  setAuthor(author: "ai" | "student") {
+    this.author = author;
+  }
+
   getFocus(): FocusState {
     return this.focus;
   }
 
   async executeOne(action: BoardAction): Promise<void> {
+    const layer = this.author;
     switch (action.type) {
       case "draw_rectangle":
         this.registry.add({
@@ -56,7 +62,7 @@ export class BoardActionExecutor {
           strokeWidth: action.strokeWidth ?? 3,
           text: action.label,
           visible: true,
-          layer: "ai",
+          layer,
         });
         this.hooks.onRegistryChange();
         await this.tween(450);
@@ -72,7 +78,7 @@ export class BoardActionExecutor {
           fill: action.fill ?? "rgba(22,78,59,0.06)",
           strokeWidth: action.strokeWidth ?? 3,
           visible: true,
-          layer: "ai",
+          layer,
         });
         this.hooks.onRegistryChange();
         await this.tween(400);
@@ -87,7 +93,7 @@ export class BoardActionExecutor {
           stroke: action.stroke ?? "#164e3b",
           strokeWidth: action.strokeWidth ?? 2,
           visible: true,
-          layer: "ai",
+          layer,
         });
         this.hooks.onRegistryChange();
         await this.tween(350);
@@ -102,7 +108,7 @@ export class BoardActionExecutor {
           stroke: action.stroke ?? "#164e3b",
           strokeWidth: action.strokeWidth ?? 3,
           visible: true,
-          layer: "ai",
+          layer,
         });
         this.hooks.onRegistryChange();
         await this.tween(350);
@@ -117,7 +123,7 @@ export class BoardActionExecutor {
           fontSize: action.fontSize ?? 22,
           fill: action.fill ?? "#164e3b",
           visible: true,
-          layer: "ai",
+          layer,
         });
         this.hooks.onRegistryChange();
         await this.tween(300);
@@ -132,7 +138,7 @@ export class BoardActionExecutor {
           fontSize: action.fontSize ?? 28,
           fill: action.fill ?? "#164e3b",
           visible: true,
-          layer: "ai",
+          layer,
         });
         this.hooks.onRegistryChange();
         await this.tween(400);
@@ -174,15 +180,28 @@ export class BoardActionExecutor {
         });
         break;
       }
-      case "show_pointer":
-        this.setFocus({
-          kind: "point",
-          objectId: null,
-          x: action.x,
-          y: action.y,
-          until: Date.now() + action.holdMs,
-        });
+      case "show_pointer": {
+        if (action.objectId) {
+          this.require(action.objectId);
+          const center = this.registry.centerOf(action.objectId);
+          this.setFocus({
+            kind: "point",
+            objectId: action.objectId,
+            x: center.x,
+            y: center.y,
+            until: Date.now() + action.holdMs,
+          });
+        } else {
+          this.setFocus({
+            kind: "point",
+            objectId: null,
+            x: action.x ?? 0,
+            y: action.y ?? 0,
+            until: Date.now() + action.holdMs,
+          });
+        }
         break;
+      }
       case "highlight": {
         this.require(action.objectId);
         const center = this.registry.centerOf(action.objectId);

@@ -2,9 +2,92 @@
 export const REALTIME_TOOLS = [
   {
     type: "function" as const,
+    name: "board_place",
+    description:
+      "PREFERRED for titles, explanations, bullet lists, and callout boxes. Place content into a named zone (title|left|right|bottom). The client wraps text, sizes boxes, and keeps everything inside 1100x620 — you do NOT pick pixel x/y. Use clearZone=true to replace that zone. For diagrams use board_diagram.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        zone: {
+          type: "string",
+          enum: ["title", "left", "right", "bottom"],
+          description:
+            "title=top banner; left=diagram/key idea; right=explanations; bottom=summary strip",
+        },
+        clearZone: {
+          type: "boolean",
+          description: "Erase existing objects overlapping this zone first",
+        },
+        blocks: {
+          type: "array",
+          minItems: 1,
+          maxItems: 12,
+          items: {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              kind: {
+                type: "string",
+                enum: ["heading", "body", "bullets", "callout"],
+              },
+              text: { type: "string" },
+              objectId: { type: "string" },
+              objectIdPrefix: { type: "string" },
+              lines: {
+                type: "array",
+                items: { type: "string" },
+              },
+            },
+            required: ["kind"],
+          },
+        },
+      },
+      required: ["zone", "blocks"],
+    },
+  },
+  {
+    type: "function" as const,
+    name: "board_diagram",
+    description:
+      "PREFERRED for diagrams. Emit coordinate-free structure only — the client computes pixels. Ops: create_shape (rectangle|circle in region left|right|center|title|bottom, size sm|md|lg), divide_region (parentId + layout 2x2-grid|1x2-row|2x1-col|3x1-row|1x3-col + cells[{id,label,kind}]), label_in, place_relative (above|below|left|right|inside), point_at/highlight by objectId, pause. Never send x/y. Refer to existing shapes by objectId.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        ops: {
+          type: "array",
+          minItems: 1,
+          maxItems: 30,
+          items: {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              op: {
+                type: "string",
+                enum: [
+                  "create_shape",
+                  "divide_region",
+                  "label_in",
+                  "place_relative",
+                  "point_at",
+                  "highlight",
+                  "pause",
+                ],
+              },
+            },
+            required: ["op"],
+          },
+        },
+      },
+      required: ["ops"],
+    },
+  },
+  {
+    type: "function" as const,
     name: "board_apply_actions",
     description:
-      "Apply whiteboard actions in PIXEL coords on total pixels 1100x620 (origin top-left). Tool result includes boardMapText with 'px x1,y1 to x2,y2' ranges. Then continue the teaching loop: ask a check question and update_lesson_state waiting_for_student. Use point_at/show_pointer for the red teaching dot while explaining. Prefer short batches.",
+      "ESCAPE HATCH only. Low-level PIXEL actions on 1100x620. Prefer board_diagram (diagrams) and board_place (prose). If you must use this: point_at/highlight/show_pointer should use objectId when possible; avoid inventing x/y for new shapes.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -30,7 +113,7 @@ export const REALTIME_TOOLS = [
     type: "function" as const,
     name: "get_board_layout",
     description:
-      "Return a pixel-level whiteboard map: total pixels, each object as 'px x1,y1 to x2,y2' with center, student ink ranges, overlaps, and free slots. Call before placing or pointing if the last map is stale.",
+      "Return object IDs and rough layout. Prefer board_diagram / board_place over freehand pixels. Call when you need available objectIds before divide_region / point_at.",
     parameters: {
       type: "object",
       additionalProperties: false,

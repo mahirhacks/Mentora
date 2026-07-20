@@ -16,7 +16,7 @@ export type BoardObject = {
   strokeWidth?: number;
   fontSize?: number;
   visible: boolean;
-  layer: "ai";
+  layer: "ai" | "student";
 };
 
 function distPointToSeg(

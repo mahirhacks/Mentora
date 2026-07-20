@@ -27,6 +27,9 @@ export const TeachingPhaseSchema = z.enum([
   "asking",
   "waiting_for_student",
   "evaluating",
+  "deciding",
+  "applying_board",
+  "speaking",
   "assessing",
   "remediating",
   "complete",
@@ -80,6 +83,8 @@ export const LessonRuntimeStateSchema = z.object({
   studentBoardActive: z.boolean().default(false),
   pendingStudentStrokeIds: z.array(z.string()).default([]),
   boardObjectIds: z.array(z.string()).default([]),
+  /** Compare-and-swap token for decide→apply board mutations. */
+  boardVersion: z.number().int().nonnegative().default(0),
   lastClassification: StudentResponseClassificationSchema.optional(),
   startedAt: z.number().int().optional(),
   completedAt: z.number().int().optional(),
