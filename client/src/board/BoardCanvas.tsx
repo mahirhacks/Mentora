@@ -5,6 +5,10 @@ import type { StudentStroke } from "@mentora/shared";
 import { EquationRenderer } from "./EquationRenderer";
 import { squareFormulaBoardActions } from "./squareDemo";
 import { useBoard } from "./BoardContext";
+import {
+  captureAnnotatedStudentInk,
+  STUDENT_DRAW_IDLE_MS,
+} from "./captureStudentInk";
 import { ERASER_RADIUS, useBoardStore } from "../state/boardStore";
 import { buildStudentBoardUpdate } from "../teaching/studentBoardBridge";
 import { useTeachingStore } from "../state/teachingStore";
@@ -13,12 +17,19 @@ import { playUiBeep } from "../state/prefsStore";
 const WIDTH = 1100;
 const HEIGHT = 620;
 
+export type StudentBoardNotify = {
+  update: ReturnType<typeof buildStudentBoardUpdate>;
+  /** Annotated PNG crop for Realtime vision — not shown in the UI. */
+  imageDataUrl?: string;
+  imageNote?: string;
+};
+
 type Props = {
   autoPlaySquareDemo?: boolean;
   hideToolbar?: boolean;
-  onStudentBoardUpdate?: (
-    payload: ReturnType<typeof buildStudentBoardUpdate>,
-  ) => void;
+  onStudentBoardUpdate?: (payload: StudentBoardNotify) => void;
+  /** Fired when the student starts drawing/placing — cancel Mentora speech. */
+  onStudentDrawStart?: () => void;
 };
 
 /** Stage scale-aware pointer → board logical coordinates. */
@@ -39,6 +50,7 @@ export function BoardCanvas({
   autoPlaySquareDemo = false,
   hideToolbar = false,
   onStudentBoardUpdate,
+  onStudentDrawStart,
 }: Props) {
   const { queue, registry } = useBoard();
   const objects = useBoardStore((s) => s.objects);
@@ -72,8 +84,38 @@ export function BoardCanvas({
   const placeCounter = useRef(0);
   const inkIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingStrokes = useRef<StudentStroke[]>([]);
+  const pendingPlaced = useRef<
+    Array<{
+      objectId: string;
+      box: { x: number; y: number; w: number; h: number };
+    }>
+  >([]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState({ width: WIDTH, height: HEIGHT, scale: 1 });
+
+  const markStudentBusy = () => {
+    setStudentBoardActive(true);
+    patchRuntime({ studentBoardActive: true });
+  };
+
+  const scheduleStudentFlush = () => {
+    markStudentBusy();
+    if (inkIdleTimer.current) clearTimeout(inkIdleTimer.current);
+    // Quietly track drawing; only notify Mentora after the student stops for 5s.
+    inkIdleTimer.current = setTimeout(() => {
+      flushStudentUpdate();
+    }, STUDENT_DRAW_IDLE_MS);
+  };
+
+  const beginStudentBoardGesture = () => {
+    const wasActive = useBoardStore.getState().studentBoardActive;
+    markStudentBusy();
+    if (!wasActive) onStudentDrawStart?.();
+    if (inkIdleTimer.current) {
+      clearTimeout(inkIdleTimer.current);
+      inkIdleTimer.current = null;
+    }
+  };
 
   useEffect(() => {
     if (!autoPlaySquareDemo) return;
@@ -106,7 +148,10 @@ export function BoardCanvas({
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (inkIdleTimer.current) clearTimeout(inkIdleTimer.current);
+    };
   }, []);
 
   const focusCenter =
@@ -123,18 +168,71 @@ export function BoardCanvas({
         : null;
 
   const flushStudentUpdate = () => {
-    if (!pendingStrokes.current.length) return;
-    const payload = buildStudentBoardUpdate(
-      pendingStrokes.current,
-      registry,
-      "showing_idea",
-    );
+    const strokes = pendingStrokes.current;
+    const placed = pendingPlaced.current;
+    if (!strokes.length && !placed.length) {
+      setStudentBoardActive(false);
+      patchRuntime({ studentBoardActive: false });
+      return;
+    }
+
+    const payload = buildStudentBoardUpdate(strokes, registry, "showing_idea");
+    if (placed.length) {
+      const xs = placed.flatMap((p) => [p.box.x, p.box.x + p.box.w]);
+      const ys = placed.flatMap((p) => [p.box.y, p.box.y + p.box.h]);
+      const minX = Math.min(...(payload.bounds ? [payload.bounds.x] : []), ...xs);
+      const minY = Math.min(...(payload.bounds ? [payload.bounds.y] : []), ...ys);
+      const maxX = Math.max(
+        ...(payload.bounds
+          ? [payload.bounds.x + payload.bounds.width]
+          : []),
+        ...xs,
+      );
+      const maxY = Math.max(
+        ...(payload.bounds
+          ? [payload.bounds.y + payload.bounds.height]
+          : []),
+        ...ys,
+      );
+      payload.bounds = {
+        x: minX,
+        y: minY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY),
+      };
+      payload.strokeIds = [
+        ...new Set([...payload.strokeIds, ...placed.map((p) => p.objectId)]),
+      ];
+      payload.strokeCount = Math.max(
+        payload.strokeCount,
+        payload.strokeIds.length,
+      );
+      payload.nearestObjectIds = [
+        ...new Set([
+          ...payload.nearestObjectIds,
+          ...placed.map((p) => p.objectId),
+        ]),
+      ];
+    }
+
+    const capture = captureAnnotatedStudentInk({
+      strokes,
+      objects: registry.list(),
+      extraBoxes: placed.map((p) => p.box),
+    });
+
     patchRuntime({
       pendingStudentStrokeIds: payload.strokeIds,
       studentBoardActive: false,
     });
-    onStudentBoardUpdate?.(payload);
+    setStudentBoardActive(false);
+    onStudentBoardUpdate?.({
+      update: payload,
+      imageDataUrl: capture?.dataUrl,
+      imageNote: capture?.note,
+    });
     pendingStrokes.current = [];
+    pendingPlaced.current = [];
   };
 
   const eraseAt = (x: number, y: number) => {
@@ -190,18 +288,34 @@ export function BoardCanvas({
           fill: string;
         },
   ) => {
-    const result = await queue.applyActions({ actions: [action] });
+    const result = await queue.applyActions(
+      { actions: [action] },
+      { author: "student" },
+    );
     if (result.success) {
       pushStudentPlaced(action.objectId);
       playUiBeep("click");
       patchRuntime({ boardObjectIds: queue.getRegistry().listIds() });
-      onStudentBoardUpdate?.({
-        strokeIds: [action.objectId],
-        strokeCount: 1,
-        nearestObjectIds: [action.objectId],
-        intentHint: "showing_idea",
-        timestamp: Date.now(),
-      });
+      const box =
+        action.type === "draw_rectangle"
+          ? { x: action.x, y: action.y, w: action.width, h: action.height }
+          : {
+              x: action.x,
+              y: action.y,
+              w: Math.min(
+                420,
+                Math.ceil(
+                  (action.type === "write_text"
+                    ? action.text.length
+                    : action.latex.length) *
+                    (action.fontSize ?? 22) *
+                    0.56,
+                ),
+              ),
+              h: Math.ceil((action.fontSize ?? 22) * 1.35),
+            };
+      pendingPlaced.current.push({ objectId: action.objectId, box });
+      scheduleStudentFlush();
     }
   };
 
@@ -216,6 +330,7 @@ export function BoardCanvas({
           ? window.prompt("Text to place on the board:")
           : window.prompt("Equation (LaTeX), e.g. a^2 + b^2 = c^2:");
       if (!label?.trim()) return;
+      beginStudentBoardGesture();
       placeCounter.current += 1;
       const objectId = `student_${tool}_${placeCounter.current}`;
       void placeObject(
@@ -243,16 +358,14 @@ export function BoardCanvas({
     }
 
     if (tool === "shapes") {
-      setStudentBoardActive(true);
-      patchRuntime({ studentBoardActive: true });
+      beginStudentBoardGesture();
       shapeStart.current = { x: pos.x, y: pos.y };
       setShapePreview({ x: pos.x, y: pos.y, width: 1, height: 1 });
       return;
     }
 
     if (tool !== "pen" && tool !== "eraser") return;
-    setStudentBoardActive(true);
-    patchRuntime({ studentBoardActive: true });
+    beginStudentBoardGesture();
     if (tool === "eraser") {
       setEraserPos(pos);
       eraseAt(pos.x, pos.y);
@@ -295,7 +408,6 @@ export function BoardCanvas({
       const { x, y, width, height } = shapePreview;
       shapeStart.current = null;
       setShapePreview(null);
-      setStudentBoardActive(false);
       if (width >= 8 && height >= 8) {
         placeCounter.current += 1;
         void placeObject({
@@ -308,6 +420,9 @@ export function BoardCanvas({
           stroke: "#164e3b",
           fill: "rgba(22,78,59,0.08)",
         });
+      } else if (!pendingStrokes.current.length && !pendingPlaced.current.length) {
+        setStudentBoardActive(false);
+        patchRuntime({ studentBoardActive: false });
       }
       return;
     }
@@ -331,12 +446,17 @@ export function BoardCanvas({
       };
       addStudentStroke(stroke);
       pendingStrokes.current.push(stroke);
-      if (inkIdleTimer.current) clearTimeout(inkIdleTimer.current);
-      inkIdleTimer.current = setTimeout(() => flushStudentUpdate(), 550);
+      scheduleStudentFlush();
+    } else if (
+      tool === "pen" &&
+      !pendingStrokes.current.length &&
+      !pendingPlaced.current.length
+    ) {
+      setStudentBoardActive(false);
+      patchRuntime({ studentBoardActive: false });
     }
     drawingRef.current = null;
     setDrawingPoints(null);
-    setStudentBoardActive(false);
   };
 
   const onPointerLeave = () => {
@@ -535,33 +655,40 @@ export function BoardCanvas({
                 )}
                 {focus.kind === "point" && (
                   <>
-                    {/* Soft red glow rings */}
+                    {/* Soft outer bloom */}
                     <Circle
                       x={focusCenter.x}
                       y={focusCenter.y}
-                      radius={28}
-                      fill="rgba(225,29,72,0.12)"
+                      radius={26}
+                      fill="rgba(255, 45, 85, 0.10)"
+                      shadowColor="#ff2d55"
+                      shadowBlur={28}
+                      shadowOpacity={0.85}
+                      shadowOffset={{ x: 0, y: 0 }}
                     />
+                    {/* Mid glow halo */}
                     <Circle
                       x={focusCenter.x}
                       y={focusCenter.y}
-                      radius={18}
-                      fill="rgba(225,29,72,0.22)"
+                      radius={14}
+                      fill="rgba(255, 50, 90, 0.22)"
+                      shadowColor="#ff1f4b"
+                      shadowBlur={18}
+                      shadowOpacity={0.9}
+                      shadowOffset={{ x: 0, y: 0 }}
                     />
+                    {/* Transparent red laser core */}
                     <Circle
                       x={focusCenter.x}
                       y={focusCenter.y}
-                      radius={11}
-                      fill="rgba(225,29,72,0.45)"
-                    />
-                    {/* Bright core */}
-                    <Circle
-                      x={focusCenter.x}
-                      y={focusCenter.y}
-                      radius={6}
-                      fill="#e11d48"
-                      stroke="#fff"
-                      strokeWidth={1.5}
+                      radius={5.5}
+                      fill="rgba(255, 55, 95, 0.45)"
+                      stroke="rgba(255, 140, 160, 0.35)"
+                      strokeWidth={1}
+                      shadowColor="#ff2a55"
+                      shadowBlur={14}
+                      shadowOpacity={1}
+                      shadowOffset={{ x: 0, y: 0 }}
                     />
                   </>
                 )}

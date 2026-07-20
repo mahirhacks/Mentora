@@ -1,3 +1,6 @@
+import { resetVoiceActivity, setVoiceActivity } from "./voiceActivity";
+import { useSessionStore } from "../state/sessionStore";
+
 export type RealtimeConnectionState =
   | "idle"
   | "connecting"
@@ -8,6 +11,7 @@ export type RealtimeConnectionState =
 export type VoiceUiState =
   | "idle"
   | "thinking"
+  | "drawing"
   | "speaking"
   | "waiting"
   | "listening";
@@ -20,11 +24,17 @@ type Handlers = {
   onRemoteStream?: (stream: MediaStream) => void;
 };
 
+/**
+ * WebRTC Realtime client.
+ * Mic stays open while Mentora speaks (browser AEC). User mute is the only
+ * reason to disable the send track — no mute-based echo guard.
+ */
 export class RealtimeClient {
   private pc: RTCPeerConnection | null = null;
   private dc: RTCDataChannel | null = null;
   private localStream: MediaStream | null = null;
-  private muted = false;
+  /** Explicit user mute from the UI. */
+  private userMuted = false;
   private handlers: Handlers;
   private outboundQueue: string[] = [];
   private dcOpen = false;
@@ -39,9 +49,11 @@ export class RealtimeClient {
 
   async connect(ephemeralKey: string, model: string): Promise<void> {
     this.handlers.onState?.("connecting");
+    setVoiceActivity({ thinking: true, speaking: false, drawing: false });
     this.handlers.onVoiceUi?.("thinking");
     this.dcOpen = false;
     this.outboundQueue = [];
+    this.userMuted = false;
 
     const pc = new RTCPeerConnection();
     this.pc = pc;
@@ -63,7 +75,11 @@ export class RealtimeClient {
     };
 
     this.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
     });
     for (const track of this.localStream.getAudioTracks()) {
       pc.addTrack(track, this.localStream);
@@ -126,6 +142,7 @@ export class RealtimeClient {
     await pc.setRemoteDescription({ type: "answer", sdp: answer });
     await dcReady;
     this.handlers.onState?.("connected");
+    setVoiceActivity({ thinking: false, speaking: false, drawing: false });
     this.handlers.onVoiceUi?.("listening");
   }
 
@@ -163,18 +180,40 @@ export class RealtimeClient {
 
   stopResponse() {
     this.sendEvent({ type: "response.cancel" });
-    this.handlers.onVoiceUi?.("listening");
+    setVoiceActivity({ speaking: false, thinking: false });
   }
 
   setMuted(muted: boolean) {
-    this.muted = muted;
-    for (const track of this.localStream?.getAudioTracks() ?? []) {
-      track.enabled = !muted;
-    }
+    this.userMuted = muted;
+    this.applyMicEnabled();
   }
 
   isMuted() {
-    return this.muted;
+    return this.userMuted;
+  }
+
+  /** Recovery only — not used on Mentora speak-start. */
+  clearInputAudio() {
+    try {
+      this.sendEvent({ type: "input_audio_buffer.clear" });
+    } catch {
+      // ignore
+    }
+  }
+
+  deleteConversationItem(itemId: string) {
+    if (!itemId) return;
+    this.sendEvent({
+      type: "conversation.item.delete",
+      item_id: itemId,
+    });
+  }
+
+  private applyMicEnabled() {
+    const enabled = !this.userMuted;
+    for (const track of this.localStream?.getAudioTracks() ?? []) {
+      track.enabled = enabled;
+    }
   }
 
   sendEvent(payload: unknown) {
@@ -201,19 +240,50 @@ export class RealtimeClient {
     this.localStream = null;
     this.dcOpen = false;
     this.outboundQueue = [];
+    this.userMuted = false;
+    resetVoiceActivity();
+    useSessionStore.getState().setVoiceUi("idle");
     this.handlers.onState?.("idle");
     this.handlers.onVoiceUi?.("idle");
+    // Drop handlers so a late data-channel message can't double-ingest.
+    this.handlers = {};
   }
 
   private mapVoiceUi(event: Record<string, unknown>) {
     const type = String(event.type ?? "");
-    if (type === "response.created" || type.includes("output_audio")) {
+
+    if (type === "response.created") {
+      setVoiceActivity({ thinking: true, speaking: false });
+      this.handlers.onVoiceUi?.("thinking");
+      return;
+    }
+
+    if (
+      type === "response.output_audio.delta" ||
+      type === "response.output_audio_transcript.delta" ||
+      type === "response.audio.delta" ||
+      type === "response.audio_transcript.delta" ||
+      type === "output_audio_buffer.started"
+    ) {
+      setVoiceActivity({ speaking: true, thinking: false });
       this.handlers.onVoiceUi?.("speaking");
-    } else if (type === "input_audio_buffer.speech_started") {
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_started") {
+      setVoiceActivity({ speaking: false, thinking: false });
       this.handlers.onVoiceUi?.("listening");
-    } else if (type === "response.done" || type === "response.cancelled") {
+      return;
+    }
+
+    if (type === "response.done" || type === "response.cancelled") {
+      setVoiceActivity({ speaking: false, thinking: false });
       this.handlers.onVoiceUi?.("waiting");
-    } else if (type === "session.updated" || type === "session.created") {
+      return;
+    }
+
+    if (type === "session.updated" || type === "session.created") {
+      setVoiceActivity({ thinking: false, speaking: false });
       this.handlers.onVoiceUi?.("listening");
     }
   }

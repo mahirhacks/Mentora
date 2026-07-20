@@ -5,7 +5,10 @@ export type RealtimeTokenResponse = {
 };
 
 export async function fetchRealtimeToken(): Promise<RealtimeTokenResponse> {
-  const res = await fetch("/api/realtime/token", { method: "POST" });
+  const res = await fetch("/api/realtime/token", {
+    method: "POST",
+    signal: AbortSignal.timeout(20000),
+  });
   const data = (await res.json()) as RealtimeTokenResponse & {
     error?: string;
     message?: string;

@@ -20,6 +20,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const setObjects = useBoardStore((s) => s.setObjects);
   const setFocus = useBoardStore((s) => s.setFocus);
   const clearStudentStrokes = useBoardStore((s) => s.clearStudentStrokes);
+  const clearStudentPlaced = useBoardStore((s) => s.clearStudentPlaced);
   const registryRef = useRef(new BoardObjectRegistry());
 
   const value = useMemo(() => {
@@ -27,10 +28,23 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     const queue = new BoardActionQueue(registry, {
       onRegistryChange: () => setObjects(registry.list()),
       onFocusChange: setFocus,
-      onClearStudentLayer: clearStudentStrokes,
+      onClearStudentLayer: () => {
+        clearStudentStrokes();
+        clearStudentPlaced();
+        for (const obj of registry.list()) {
+          if (obj.layer === "student") {
+            try {
+              registry.erase(obj.id);
+            } catch {
+              // ignore
+            }
+          }
+        }
+        setObjects(registry.list());
+      },
     });
     return { registry, queue };
-  }, [setObjects, setFocus, clearStudentStrokes]);
+  }, [setObjects, setFocus, clearStudentStrokes, clearStudentPlaced]);
 
   return (
     <BoardContext.Provider value={value}>{children}</BoardContext.Provider>
