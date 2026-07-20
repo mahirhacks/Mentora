@@ -1,26 +1,21 @@
-import express from "express";
-import cors from "cors";
-import { HealthResponseSchema } from "@mentora/shared";
-import { env } from "./env.js";
-import { realtimeTokenRouter } from "./routes/realtimeToken.js";
-import { lessonRouter } from "./routes/lesson.js";
+import { createServer } from "node:http";
+import { loadEnv } from "./env.js";
+import { handleRequest } from "./routes.js";
 
-const app = express();
-app.use(cors({ origin: true }));
-app.use(express.json({ limit: "2mb" }));
+const env = loadEnv();
 
-app.get("/api/health", (_req, res) => {
-  const body = HealthResponseSchema.parse({
-    ok: true as const,
-    service: "mentora" as const,
-    ts: Date.now(),
+const server = createServer((req, res) => {
+  handleRequest(req, res).catch((error) => {
+    console.error(error);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : "Internal server error",
+      }),
+    );
   });
-  res.json(body);
 });
 
-app.use("/api/realtime", realtimeTokenRouter);
-app.use("/api/lesson", lessonRouter);
-
-app.listen(env.port, () => {
-  console.log(`[mentora-server] listening on http://localhost:${env.port}`);
+server.listen(env.port, () => {
+  console.log(`Mentora server listening on http://localhost:${env.port}`);
 });

@@ -5,10 +5,9 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const rootEnv = resolve(here, "../../.env");
 
-export interface ServerEnv {
+export interface DebugEnv {
   openaiApiKey: string;
   plannerModel: string;
-  port: number;
 }
 
 function parseEnvFile(path: string): Record<string, string> {
@@ -34,7 +33,7 @@ function parseEnvFile(path: string): Record<string, string> {
   return values;
 }
 
-export function loadEnv(): ServerEnv {
+export function loadEnv(): DebugEnv {
   const fileValues = existsSync(rootEnv) ? parseEnvFile(rootEnv) : {};
 
   const openaiApiKey =
@@ -43,11 +42,12 @@ export function loadEnv(): ServerEnv {
     process.env.OPENAI_PLANNER_MODEL ??
     fileValues.OPENAI_PLANNER_MODEL ??
     "gpt-5.6-sol";
-  const port = Number(process.env.PORT ?? fileValues.PORT ?? 3001);
 
   if (!openaiApiKey) {
-    throw new Error("Missing OPENAI_API_KEY in environment or root .env");
+    throw new Error(
+      "Missing OPENAI_API_KEY. Add it to the root .env file or your environment.",
+    );
   }
 
-  return { openaiApiKey, plannerModel, port };
+  return { openaiApiKey, plannerModel };
 }

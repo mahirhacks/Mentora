@@ -6,10 +6,8 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": ".",
-    "declaration": true,
+    "noEmit": true,
     "types": ["node"]
   },
-  "include": ["tools/**/*.ts", "scripts/**/*.ts", "src/**/*.ts"]
+  "include": ["src/**/*.ts", "../server/tools/**/*.ts"]
 }

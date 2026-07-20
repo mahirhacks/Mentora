@@ -2,23 +2,13 @@
   "name": "mentora",
   "private": true,
   "version": "0.1.0",
-  "workspaces": [
-    "client",
-    "server",
-    "shared",
-    "mentora-loop"
-  ],
   "scripts": {
-    "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
-    "smoke": "npm run smoke -w server",
-    "test": "npm run test -w shared --if-present && npm run test -w server --if-present && npm run test -w client --if-present",
-    "test:mentora-loop": "tsx mentora-loop/src/runner.ts",
-    "test:mentora-live-smoke": "tsx mentora-loop/src/liveSmoke.ts"
-  },
-  "devDependencies": {
-    "concurrently": "^9.2.1",
-    "tsx": "^4.23.1",
-    "typescript": "^5.9.2"
+    "debug": "npm --prefix debug start",
+    "debug:prompt": "npm --prefix debug start --",
+    "tools": "npm --prefix server run tools",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "dev": "npm --prefix server run dev",
+    "install:all": "npm --prefix server install && npm --prefix client install && npm --prefix debug install"
   }
 }

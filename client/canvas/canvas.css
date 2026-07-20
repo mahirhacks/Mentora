@@ -1,0 +1,55 @@
+.teaching-canvas-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(100%, 1040px);
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.teaching-canvas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.teaching-canvas-eyebrow {
+  margin: 0 0 4px;
+  color: #64748b;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.teaching-canvas-header h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.teaching-canvas-badge {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: #334155;
+  font-size: 13px;
+  background: #ffffff;
+}
+
+.teaching-canvas {
+  width: 100%;
+  height: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  background: #f8fafc;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, sans-serif;
+  background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 40%, #ffffff 100%);
+  min-height: 100vh;
+}

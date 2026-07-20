@@ -1,60 +1,91 @@
 # Mentora
 
-Voice-first AI teacher for the OpenAI hackathon: **GPT-Realtime-2.1** teaches live over WebRTC, **GPT-5.6 Terra** plans rarely, and a shared Konva whiteboard lets both Mentora and the student draw.
+Voice-first AI teacher with a live drawing board. Mentora plans short teaching turns, draws on a 1280×720 canvas, and walks students through one concept at a time.
 
-MVP teaches **any topic** you ask (math, science, history, …). The classic demo lesson is expanding `(a+b)²` with an area model.
+## Project structure
 
-## Architecture (two models only)
-
-| Model | Role |
-|-------|------|
-| `gpt-realtime-2.1` | Live voice teacher, barge-in, tools, board control |
-| `gpt-5.6-terra` | Lesson plan / replan / optional summary |
-
-Deterministic board engine + app state machine provide discipline. See `ARCHITECTURE.md`.
+| Package | Purpose |
+|---------|---------|
+| `client/` | React + Vite UI — canvas, chat, transcript |
+| `server/` | HTTP API, teaching planner, deterministic board tools |
+| `debug/` | Terminal REPL to test planner scripts without the browser |
 
 ## Quick start
 
+### 1. Configure environment
+
 ```bash
-cp .env.example .env   # set OPENAI_API_KEY
-npm install
-npm run smoke          # Phase 0: token + WebRTC + interrupt + Terra
-npm run dev            # http://localhost:5173  ·  API :3001
+cp .env.example .env
 ```
 
-### Env
+Edit `.env` and set your `OPENAI_API_KEY`.
 
+### 2. Install dependencies
+
+```bash
+cd server && npm install
+cd ../client && npm install
+cd ../debug && npm install
 ```
-OPENAI_API_KEY=sk-...
-OPENAI_REALTIME_MODEL=gpt-realtime-2.1
-OPENAI_PLANNER_MODEL=gpt-5.6-terra
-PORT=3001
-VITE_DEMO_SAFE_MODE=false
+
+### 3. Run the app
+
+In two terminals:
+
+```bash
+# Terminal 1 — API server (port 3001)
+npm run server
+
+# Terminal 2 — web UI (port 5173)
+npm run client
 ```
 
-Set `VITE_DEMO_SAFE_MODE=true` for recorded demos (uses prevalidated `fallbackSquareLesson`, keeps Realtime live).
-
-## How to demo
-
-1. Open http://localhost:5173 → type **any topic** on Home (or pick a suggestion) → **Teach me**
-2. Allow microphone — lesson auto-starts for `?topic=…`
-3. Mentora plans with Terra (or a topic-aware fallback), draws on the board, asks questions
-4. Speak anytime to interrupt; draw with **pen** mid-teach — Mentora receives `student_board_update`
-5. Type follow-ups in the dock, or use **Stop AI** / **Mute** / **Restart** / **Stop lesson**
-6. On complete → summary for that topic 
+Open http://localhost:5173, type a topic or question, and Mentora will plan a teaching turn on the board.
 
 ## Scripts
 
-| Command | Purpose |
-|---------|---------|
-| `npm run dev` | Express + Vite |
-| `npm run smoke` | Phase 0 API access gate |
-| `npm test` | Shared + client unit tests |
+From the repo root:
 
-## Design
+| Command | Description |
+|---------|-------------|
+| `npm run server` | Start the teaching API server |
+| `npm run client` | Start the Vite dev server |
+| `npm run debug` | Open the terminal planner REPL |
+| `npm run tools` | Run board tool CLI (`list`, `demo`, `run`) |
 
-Desktop UI follows `example_UI/` comps (dark neon Mentora shell). Mobile frames are ignored on purpose.
+## Board tools
 
-## Safety
+The server exposes deterministic canvas tools the planner can call:
 
-`OPENAI_API_KEY` stays server-side. Browser only receives ephemeral Realtime client secrets.
+- `create_shape`, `divide_region`, `label_in`, `place_relative`
+- `write_text`, `highlight`, `point_at`
+- `erase_object`, `reset_board`
+
+Test a tool from the CLI:
+
+```bash
+cd server
+npm run tools -- list
+npm run tools -- demo
+```
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | — | Required. OpenAI API key |
+| `OPENAI_PLANNER_MODEL` | `gpt-5.6-sol` | Model for teaching script planning |
+| `OPENAI_REALTIME_MODEL` | `gpt-realtime-2.1-mini` | Reserved for future voice integration |
+| `PORT` | `3001` | Server port |
+| `VITE_DEMO_SAFE_MODE` | `false` | Client demo flag |
+
+## Architecture
+
+1. **Planner** — GPT generates a short teaching script (`speak`, `tool`, `observe` steps) via `submit_teaching_script`.
+2. **Script player** — Server executes tool steps against an in-memory board state and streams events over SSE.
+3. **Canvas renderer** — Client draws shapes, text, labels, highlights, and pointers from board state.
+4. **Layout guards** — Placement and boundary clamping keep content inside the visible 1280×720 safe zone.
+
+## License
+
+Private hackathon project.
