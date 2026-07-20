@@ -113,8 +113,95 @@ h2 {
 
 .chat-bar {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   gap: 10px;
+  align-items: center;
+}
+
+.voice-mic-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 72px;
+}
+
+.voice-mic-button {
+  width: 48px;
+  height: 48px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.voice-mic-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.voice-mic-button.is-active {
+  background: #ecfdf5;
+  border-color: #34d399;
+  color: #047857;
+}
+
+.voice-mic-button.is-recording {
+  background: #fef2f2;
+  border-color: #f87171;
+  color: #b91c1c;
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+.voice-mic-button.is-busy {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.voice-mic-button:disabled {
+  cursor: not-allowed;
+}
+
+.voice-mic-status {
+  font-size: 11px;
+  color: #64748b;
+  text-align: center;
+}
+
+.speaking-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.mic-error-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+@keyframes mic-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
 }
 
 .chat-input {
@@ -193,6 +280,11 @@ h2 {
 .transcription-item.speak {
   background: #eff6ff;
   border: 1px solid #bfdbfe;
+}
+
+.transcription-item.student {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
 }
 
 .transcription-item.observe {

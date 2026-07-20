@@ -1,14 +1,20 @@
+import type { SpeakDirective } from "../../voice/types.js";
+import type { BoardObject, BoardState, Bounds, BoardStyle } from "../../tools/types.js";
+import type { VerifiedBoardObservation } from "../../voice/types.js";
+
 export type {
   BoardObject,
   BoardState,
   Bounds,
   BoardStyle,
-} from "../../tools/types.js";
+  SpeakDirective,
+  VerifiedBoardObservation,
+};
 
 export type TeachingStep =
-  | { kind: "speak"; text: string }
+  | { kind: "speak"; directive: SpeakDirective; text?: string }
   | { kind: "tool"; toolName: string; input: Record<string, unknown> }
-  | { kind: "observe"; text: string };
+  | { kind: "observe"; text: string; boardObjectIds?: string[] };
 
 export type LessonEvent =
   | { type: "planning" }
@@ -19,16 +25,31 @@ export type LessonEvent =
       ok: boolean;
       result?: unknown;
       error?: string;
-      boardState: import("../../tools/types.js").BoardState;
+      boardState: BoardState;
     }
   | {
       type: "observe_context";
       index: number;
       context: string;
+      observation?: VerifiedBoardObservation;
+    }
+  | {
+      type: "speech_interpreted";
+      index: number;
+      speechId: string;
+      naturalText: string;
+      directive: SpeakDirective;
+    }
+  | {
+      type: "voice_audio";
+      index: number;
+      speechId: string;
+      audioBase64: string;
+      mimeType: string;
     }
   | {
       type: "done";
       script: TeachingStep[];
-      boardState: import("../../tools/types.js").BoardState;
+      boardState: BoardState;
     }
   | { type: "error"; message: string };

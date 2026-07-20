@@ -1,8 +1,15 @@
+import { VoiceMicButton } from "./VoiceMicButton";
+import type { MicStatus } from "../hooks/useVoiceInput";
+
 interface ChatBarProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
   disabled?: boolean;
+  isMuted: boolean;
+  micStatus: MicStatus;
+  micError?: string | null;
+  onToggleMic: () => void;
 }
 
 export function ChatBar({
@@ -10,6 +17,10 @@ export function ChatBar({
   onChange,
   onSubmit,
   disabled = false,
+  isMuted,
+  micStatus,
+  micError,
+  onToggleMic,
 }: ChatBarProps) {
   return (
     <form
@@ -19,6 +30,13 @@ export function ChatBar({
         onSubmit();
       }}
     >
+      <VoiceMicButton
+        isMuted={isMuted}
+        micStatus={micStatus}
+        micError={micError}
+        disabled={disabled}
+        onToggle={onToggleMic}
+      />
       <input
         className="chat-input"
         value={value}

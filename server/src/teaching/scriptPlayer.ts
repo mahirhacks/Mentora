@@ -39,6 +39,16 @@ export async function* playTeachingScript(
       };
     }
 
+    if (step.kind === "speak") {
+      yield {
+        type: "speech_interpreted",
+        index,
+        speechId: step.directive.speechId,
+        naturalText: step.text ?? step.directive.voiceScript,
+        directive: step.directive,
+      };
+    }
+
     await delay(STEP_DELAY_MS);
   }
 

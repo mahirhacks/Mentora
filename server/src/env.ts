@@ -8,6 +8,8 @@ const rootEnv = resolve(here, "../../.env");
 export interface ServerEnv {
   openaiApiKey: string;
   plannerModel: string;
+  transcriptionModel: string;
+  realtimeModel: string;
   port: number;
 }
 
@@ -43,11 +45,25 @@ export function loadEnv(): ServerEnv {
     process.env.OPENAI_PLANNER_MODEL ??
     fileValues.OPENAI_PLANNER_MODEL ??
     "gpt-5.6-sol";
+  const transcriptionModel =
+    process.env.OPENAI_TRANSCRIPTION_MODEL ??
+    fileValues.OPENAI_TRANSCRIPTION_MODEL ??
+    "gpt-4o-mini-transcribe";
+  const realtimeModel =
+    process.env.OPENAI_REALTIME_MODEL ??
+    fileValues.OPENAI_REALTIME_MODEL ??
+    "gpt-realtime-2.1-mini";
   const port = Number(process.env.PORT ?? fileValues.PORT ?? 3001);
 
   if (!openaiApiKey) {
     throw new Error("Missing OPENAI_API_KEY in environment or root .env");
   }
 
-  return { openaiApiKey, plannerModel, port };
+  return {
+    openaiApiKey,
+    plannerModel,
+    transcriptionModel,
+    realtimeModel,
+    port,
+  };
 }

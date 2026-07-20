@@ -1,3 +1,10 @@
+export interface SpeakDirective {
+  speechId: string;
+  voiceScript: string;
+  boardObjectIds: string[];
+  finalQuestion: string | null;
+}
+
 export type ShapeKind = "rectangle" | "ellipse" | "line" | "polygon";
 
 export interface Bounds {
@@ -79,12 +86,13 @@ export interface BoardState {
 }
 
 export type TeachingStep =
-  | { kind: "speak"; text: string }
+  | { kind: "speak"; directive: SpeakDirective; text?: string }
   | { kind: "tool"; toolName: string; input: Record<string, unknown> }
-  | { kind: "observe"; text: string };
+  | { kind: "observe"; text: string; boardObjectIds?: string[] };
 
 export type TranscriptEntry =
-  | { id: string; kind: "speak"; text: string }
+  | { id: string; kind: "speak"; text: string; speechId?: string }
+  | { id: string; kind: "student"; text: string; source: "voice" | "chat" }
   | { id: string; kind: "observe"; text: string; context?: string };
 
 export type LessonEvent =
@@ -99,5 +107,18 @@ export type LessonEvent =
       boardState: BoardState;
     }
   | { type: "observe_context"; index: number; context: string }
+  | {
+      type: "speech_interpreted";
+      index: number;
+      speechId: string;
+      naturalText: string;
+    }
+  | {
+      type: "voice_audio";
+      index: number;
+      speechId: string;
+      audioBase64: string;
+      mimeType: string;
+    }
   | { type: "done"; script: TeachingStep[]; boardState: BoardState }
   | { type: "error"; message: string };

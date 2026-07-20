@@ -86,6 +86,41 @@ npm run tools -- demo
 3. **Canvas renderer** — Client draws shapes, text, labels, highlights, and pointers from board state.
 4. **Layout guards** — Placement and boundary clamping keep content inside the visible 1280×720 safe zone.
 
+## Voice architecture
+
+Voice and chat both enter the same canonical handler:
+
+```ts
+handleStudentTurn({
+  source: "voice" | "chat",
+  text: canonicalText,
+});
+```
+
+| Module | Role |
+|--------|------|
+| `server/voice/voiceFilter.ts` | Echo/noise cancellation capture constraints |
+| `server/voice/transcriber.ts` | `gpt-4o-mini-transcribe` for student audio → text |
+| `server/voice/voiceAssistant.ts` | Realtime voice performer (`gpt-realtime-2.1-mini`) |
+| `server/voice/handleStudentTurn.ts` | Canonical student-turn orchestration |
+
+**Boundary:** the decision model plans teaching and writes `voice_script` lines; the voice model only performs them against verified board state.
+
+Flow:
+
+1. Student voice → transcriber → `handleStudentTurn`
+2. Decision model returns tool steps + `voice_script` speak steps
+3. Tools execute on the deterministic board
+4. Verified board observation is built from actual state
+5. Voice assistant speaks using `{ user_prompt, observation }` plus the prepared script
+
+API endpoints:
+
+- `POST /api/student-turn` — unified chat/voice turn (SSE)
+- `POST /api/voice/transcribe` — audio → `{ source: "voice", text }`
+- `POST /api/voice/session` — ephemeral Realtime session for browser audio
+- `GET /api/voice/config` — capture + voice session config
+
 ## License
 
 Private hackathon project.

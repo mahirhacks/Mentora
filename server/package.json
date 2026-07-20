@@ -10,10 +10,12 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "openai": "^4.86.2"
+    "openai": "^4.86.2",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   }
