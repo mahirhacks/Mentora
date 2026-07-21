@@ -41,7 +41,7 @@ export function loadEnv(): DebugEnv {
   const plannerModel =
     process.env.OPENAI_PLANNER_MODEL ??
     fileValues.OPENAI_PLANNER_MODEL ??
-    "gpt-5.6-sol";
+    "gpt-5.6-terra";
 
   if (!openaiApiKey) {
     throw new Error(

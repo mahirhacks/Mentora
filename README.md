@@ -24,6 +24,9 @@ learner's response.
 
 ## Architecture
 
+See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the full demo-ready system diagrams
+(model separation, clone-only preflight, word-level marking, and client contract).
+
 ```mermaid
 flowchart LR
   Input[Typed chat or recorded voice] --> Canonical[Canonical student text]
@@ -38,6 +41,12 @@ flowchart LR
   Observation --> Realtime
   Realtime --> Captions[PCM playback and captions]
 ```
+
+Models used in the submitted build (also set in `.env.example`):
+
+- Planner: `gpt-5.6-terra`
+- Transcriber: `gpt-4o-mini-transcribe`
+- Voice performer: `gpt-realtime-2.1-mini`
 
 The runtime keeps responsibilities deliberately narrow:
 
@@ -171,13 +180,16 @@ submission form after the final development session.
 - `server/tests/` — offline safety and golden-lesson regression suite;
 - `data/sessions/` — local persisted lesson JSON (gitignored runtime data);
 - `debug/` — terminal planner harness using the production prompt and schema;
+- `DEMO.md` — demo-video script, show notes, Devpost copy, and final checklist;
+- `ARCHITECTURE.md` — system diagrams for the architecture section of the video;
 - `REHEARSAL_RESULTS.md` — approved nine-run live planner/tool measurements;
-- `SUBMISSION.md` — recording script, Devpost copy, and final external checklist.
+- `project_story.md` — Devpost project story draft.
 
 ## Submission assets
 
 The final public video URL and screenshot/GIF should be added here after upload.
-The recording plan and copy are ready in [SUBMISSION.md](SUBMISSION.md).
+The demo-video script and show notes are in [DEMO.md](DEMO.md).
+System diagrams for the architecture beat are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 

@@ -28,6 +28,7 @@ A learner can:
 
 - **Speak, type, draw, or combine them.** Voice goes through transcription; typed chat goes straight to the planner; canvas edits are observed as board state. Combined input is wrapped so the planner gets full multimodal context.
 - **Watch the board get built for their exact confusion.** GPT-5.6 plans a short teaching turn: what to say, which visual metaphor to use, which board tools to run, and one diagnostic question.
+- **Mark a specific word, not a whole line.** Board text is laid out as individual word objects, so when a learner circles `func` or `world`, Mentora can name the exact marked word instead of guessing the entire phrase.
 - **Interrupt mid-lesson** by talking or interacting with the canvas. The system picks up where they left off and adapts.
 - **Resume later.** Sessions persist locally so a lesson can continue from the home page.
 
@@ -44,9 +45,9 @@ The core design decision is strict separation of roles:
 
 | Role | Model | Responsibility |
 | --- | --- | --- |
-| Planner | GPT-5.6 (`gpt-5.6-sol`) | Reads student input and board state, then creates the teaching plan, visual actions, and diagnostic question. |
+| Planner | GPT-5.6 (`gpt-5.6-terra`) | Reads student input and board state, then creates the teaching plan, visual actions, and diagnostic question. |
 | Transcriber | `gpt-4o-mini-transcribe` | Converts student speech into text for the planner. |
-| Voice performer | `gpt-realtime-2.1` | Delivers the validated teaching script naturally without independently planning the lesson or inventing board facts. |
+| Voice performer | `gpt-realtime-2.1-mini` | Delivers the validated teaching script naturally without independently planning the lesson or inventing board facts. |
 
 
 Early on, GPT-5.6 and the Realtime voice assistant both tried to plan. That caused duplicated reasoning and hallucinations. The fix was architectural: **the planner plans; the voice only performs.**
@@ -56,6 +57,12 @@ Early on, GPT-5.6 and the Realtime voice assistant both tried to plan. That caus
 The planner never gets unchecked tool access to live state. It writes a script. A local validator and ten deterministic board tools preflight that script on a **cloned** board. Only verified, turn-scoped snapshots reach the learner. Live canvas state is server-authoritative; the client renders sequenced SSE events and plays PCM with captions.
 
 That boundary is the product: unconstrained diagram generation is easy to demo and hard to trust. Mentora trades breadth for a verified teaching loop.
+
+### Word-level board text for precise marking
+
+A shared board only works if the tutor can see *what* the student marked. Writing a whole sentence as one text object made “hello **world**” ambiguous — circling one word still looked like the whole string.
+
+The fix is deterministic, not prompt-only: `write_text` accepts a multi-word / multi-line snippet in one call, then expands it into one board object per word (with JSON-safe spacing marks and newline/indent handling). The planner stays light; the executor owns placement. Learners can circle a single keyword in a code snippet, and Mentora can answer with that exact word.
 
 ### How Codex accelerated the week
 
@@ -85,6 +92,7 @@ Codex helped me learn what I needed, reason about tradeoffs, and ship a coherent
 - Going from **zero to a working multimodal teaching product in two days**, solo.
 - A clean agentic boundary: planner scripts, deterministic tools execute, Realtime performs — no role bleed.
 - A two-way board: the AI draws to teach; the student draws or speaks to show what they mean; the next turn adapts.
+- Word-level board text: one tool call can write a full snippet, but the board stores each word as its own object so student marks resolve to the exact keyword — not the whole line.
 - Offline verification and live rehearsals produced 8 first-pass accepted planner scripts out of 9, with the remaining script safely rejected before it could modify the live canvas, and 0 tool-execution failures across 30 approved tool calls. Full results are documented in `REHEARSAL_RESULTS.md`.
 - A real-user moment: I tested with a friend, and we both learned Rust basics through Mentora’s visual loop — which is exactly the feeling I wanted when I first saw that whiteboard lesson.
 
@@ -101,11 +109,10 @@ Codex helped me learn what I needed, reason about tradeoffs, and ship a coherent
 
 ## What's next for Mentora
 
-With additional development time, the next priorities are capacity, precision, and lower operating cost:
+With additional development time, the next priorities are capacity and lower operating cost:
 
 - Expand the tool set so Mentora can teach harder topics without leaving the verified-execution model.
 - Support **multiple boards/canvases in one session**, and let the tutor reason across them at once.
-- Fix pointing precision: today, circling part of a phrase like “hello **world**” can still be interpreted as marking the whole string. A character-level (or glyph-level) board representation would let the tutor see exactly what the learner marked.
 - Revisit progress understanding once the core visual loop is even more solid.
 
 Mentora’s north star remains the same as the original whiteboard idea: beginners should not receive another wall of rephrased text. They should receive a visual explanation for the point where they are stuck—constructed with them, taught out loud, and checked through interaction.
