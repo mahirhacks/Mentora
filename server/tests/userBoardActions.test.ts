@@ -47,7 +47,7 @@ describe("user board actions", () => {
 
     expect(edited.objects.ai_equation.createdBy).toBe("ai");
     const stroke = Object.values(edited.objects).find(
-      (object) => object.id !== "ai_equation",
+      (object) => object.createdBy === "user",
     );
     expect(stroke?.createdBy).toBe("user");
   });

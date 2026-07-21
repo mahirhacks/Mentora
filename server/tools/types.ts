@@ -113,6 +113,10 @@ export interface TextObject {
   fontWeight?: "normal" | "bold";
   align?: "left" | "center" | "right";
   maxWidth?: number;
+  /** Shared id for words expanded from one write_text call. */
+  groupId?: string;
+  /** Reference-only block for a multi-word group; not drawn or hit-tested. */
+  ghost?: boolean;
   style?: BoardStyle;
 }
 

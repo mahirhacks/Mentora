@@ -13,6 +13,10 @@ const NON_BLOCKING_KINDS = new Set<BoardObject["kind"]>([
   "arrow",
 ]);
 
+function isGhostText(object: BoardObject) {
+  return object.kind === "text" && object.ghost === true;
+}
+
 function contains(outer: Bounds, inner: Bounds, tolerance = 2) {
   return (
     inner.x >= outer.x - tolerance &&
@@ -79,6 +83,21 @@ function isIntentionalRelationship(a: BoardObject, b: BoardObject) {
     return true;
   }
 
+  if (
+    a.kind === "text" &&
+    b.kind === "text" &&
+    a.groupId &&
+    a.groupId === b.groupId
+  ) {
+    return true;
+  }
+
+  // Ghost group boxes are reference-only and span the whole snippet; they must
+  // not fail turns by colliding with nearby notes or later drawings.
+  if (isGhostText(a) || isGhostText(b)) {
+    return true;
+  }
+
   return false;
 }
 
@@ -120,12 +139,16 @@ export function inspectBoardEdit(
 
   for (const changedId of changedIds) {
     const changed = after.objects[changedId];
-    if (!changed || NON_BLOCKING_KINDS.has(changed.kind)) {
+    if (
+      !changed ||
+      NON_BLOCKING_KINDS.has(changed.kind) ||
+      isGhostText(changed)
+    ) {
       continue;
     }
 
     for (const other of objects) {
-      if (other.id === changed.id) {
+      if (other.id === changed.id || isGhostText(other)) {
         continue;
       }
       const pair = [changed.id, other.id].sort().join("::");

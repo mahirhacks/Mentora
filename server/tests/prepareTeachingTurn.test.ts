@@ -197,4 +197,37 @@ describe("prepareTeachingTurn", () => {
       expect(result.turn.finalBoardState.objects.old_text).toBeUndefined();
     }
   });
+
+  it("ignores ghost group bounds when checking collisions with nearby notes", () => {
+    const initial = createBoardState();
+    const result = prepareTeachingTurn(
+      [
+        {
+          kind: "tool",
+          toolName: "write_text",
+          input: {
+            id: "code",
+            text: "package{s}main{n}import{s}fmt",
+            x: 80,
+            y: 120,
+            fontSize: 16,
+          },
+        },
+        {
+          kind: "tool",
+          toolName: "write_text",
+          input: {
+            id: "note",
+            text: "package{s}starts{s}the{s}file",
+            x: 420,
+            y: 120,
+            fontSize: 16,
+          },
+        },
+      ],
+      initial,
+    );
+
+    expect(result.ok).toBe(true);
+  });
 });

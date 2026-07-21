@@ -113,7 +113,7 @@ describe("handleStudentTurn planning recovery", () => {
       events.find((event) => event.type === "speech_interpreted"),
     ).toMatchObject({
       naturalText:
-        "I will keep the current board clear instead of drawing over it. Should I clear the board and redraw this example?",
+        "I couldn't finish that visual safely on this turn. Ask me again and I'll redraw the next example.",
     });
     expect(events.some((event) => event.type === "error")).toBe(false);
     expect(session.boardState).toEqual(createBoardState());

@@ -52,7 +52,14 @@ function summarizeObject(object: BoardObject): string {
     return `${object.shape}${object.label ? ` "${object.label}"` : ""}`;
   }
   if (object.kind === "text" || object.kind === "label") {
-    return `"${object.text}"`;
+    if (object.kind === "text" && object.ghost) {
+      return `text-group "${object.text.replace(/\s+/g, " ").trim()}"`;
+    }
+    const groupNote =
+      object.kind === "text" && object.groupId && object.id !== object.groupId
+        ? ` (word in ${object.groupId})`
+        : "";
+    return `"${object.text}"${groupNote}`;
   }
   if (object.kind === "division") {
     return `division ${object.regionIndex + 1} of ${object.parentId}`;

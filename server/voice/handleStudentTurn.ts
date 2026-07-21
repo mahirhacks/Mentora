@@ -221,6 +221,7 @@ export async function* handleStudentTurn(input: {
     const preparation = prepareTeachingTurn(
       planResult.value,
       session.boardState,
+      { resolveOccupiedOverlays: true },
     );
     if (preparation.ok) {
       prepared = preparation.turn;
@@ -255,6 +256,7 @@ export async function* handleStudentTurn(input: {
       const preparation = prepareTeachingTurn(
         planResult.value,
         session.boardState,
+        { resolveOccupiedOverlays: true },
       );
       if (preparation.ok) {
         prepared = preparation.turn;
@@ -281,16 +283,23 @@ export async function* handleStudentTurn(input: {
     }
   }
 
+  if (stopForAbort()) {
+    return;
+  }
+
   if (!prepared) {
+    console.warn(
+      "[mentora] teaching turn fell back to safe speech; prep/validation failed:\n" +
+        (repairFeedback || "no repair feedback available"),
+    );
     const fallbackStep: TeachingStep = {
       kind: "speak",
       directive: {
         speechId: `safe_board_fallback_${turnId}`,
         voiceScript:
-          "I will keep the current board clear instead of drawing over it.",
+          "I couldn't finish that visual safely on this turn.",
         boardObjectIds: [],
-        finalQuestion:
-          "Should I clear the board and redraw this example?",
+        finalQuestion: "Ask me again and I'll redraw the next example.",
       },
     };
     prepared = {

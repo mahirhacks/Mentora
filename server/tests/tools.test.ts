@@ -104,14 +104,46 @@ describe("core board tools", () => {
     const state = createBoardState();
     const outcome = runTool(
       "write_text",
-      { id: "equation", text: "7 + 5 = 12", x: -500, y: -500 },
+      { id: "equation", text: "7{s}+{s}5{s}={s}12", x: -500, y: -500 },
       state,
     );
 
     expect(outcome.ok).toBe(true);
     const equation = state.objects.equation;
+    expect(equation).toBeDefined();
     expect(equation.bounds.x).toBeGreaterThanOrEqual(SAFE_ZONE.x);
     expect(equation.bounds.y).toBeGreaterThanOrEqual(SAFE_ZONE.y);
+    expect(equation.ghost).toBe(true);
+    expect(state.objects.equation_w0?.text).toBe("7");
+    expect(state.objects.equation_w4?.text).toBe("12");
+  });
+
+  it("splits multi-line write_text into per-word objects across rows", () => {
+    const state = createBoardState();
+    const outcome = runTool(
+      "write_text",
+      {
+        id: "lyrics",
+        text: "fly{s}me{s}to{s}the{s}moon{n}let{s}me{s}see{s}mars",
+        x: 120,
+        y: 160,
+      },
+      state,
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect(outcome.result.wordIds.length).toBe(9);
+    expect(outcome.result.text).toBe("fly me to the moon\nlet me see mars");
+    expect(state.objects.lyrics?.ghost).toBe(true);
+    expect(state.objects.lyrics_w0?.text).toBe("fly");
+    expect(state.objects.lyrics_w4?.text).toBe("moon");
+    expect(state.objects.lyrics_w5?.text).toBe("let");
+    expect(state.objects.lyrics_w5.bounds.y).toBeGreaterThan(
+      state.objects.lyrics_w0.bounds.y,
+    );
   });
 
   it("highlights an existing object", () => {
@@ -363,7 +395,7 @@ describe("core board tools", () => {
     expect(state.objects).toEqual({});
   });
 
-  it("protects student-created work from implicit AI erase and reset", () => {
+  it("protects student-created work from erase_object but reset_board clears all", () => {
     const state = createBoardState();
     runTool(
       "create_shape",
@@ -391,8 +423,22 @@ describe("core board tools", () => {
     expect(state.objects.student_shape).toBeDefined();
 
     expect(runTool("reset_board", {}, state).ok).toBe(true);
-    expect(state.objects.student_shape).toBeDefined();
-    expect(state.objects.ai_note).toBeUndefined();
+    expect(state.objects).toEqual({});
+
+    runTool(
+      "create_shape",
+      {
+        id: "student_shape",
+        shape: "rectangle",
+        x: 240,
+        y: 180,
+        width: 160,
+        height: 100,
+      },
+      state,
+    );
+    state.objects.student_shape.createdBy = "user";
+    state.objects.student_shape.updatedBy = "user";
 
     expect(
       runTool(

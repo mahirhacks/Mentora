@@ -94,7 +94,8 @@ export function prepareTeachingTurn(
         {
           allowEducationalErasure:
             step.toolName === "erase_object" ||
-            step.toolName === "reset_board",
+            step.toolName === "reset_board" ||
+            step.toolName === "write_text",
         },
       );
 
@@ -118,11 +119,26 @@ export function prepareTeachingTurn(
                 occupied.kind === "pointer")
             ) {
               removableIds.add(occupiedId);
+              if (occupied.kind === "text" && occupied.groupId) {
+                for (const [id, object] of Object.entries(
+                  boardBeforeEdit.objects,
+                )) {
+                  if (
+                    object.kind === "text" &&
+                    object.groupId === occupied.groupId
+                  ) {
+                    removableIds.add(id);
+                  }
+                }
+              }
             }
           }
         }
 
         for (const objectId of removableIds) {
+          if (!workingState.objects[objectId]) {
+            continue;
+          }
           const next = removeObject(workingState, objectId);
           workingState.objects = next.objects;
           workingState.revision = next.revision;
