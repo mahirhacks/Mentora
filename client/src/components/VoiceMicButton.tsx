@@ -4,10 +4,19 @@ interface VoiceMicButtonProps {
   isMuted: boolean;
   micStatus: MicStatus;
   disabled?: boolean;
+  pushToTalk?: boolean;
   onToggle: () => void;
 }
 
-function statusLabel(micStatus: MicStatus, isMuted: boolean) {
+function statusLabel(
+  micStatus: MicStatus,
+  isMuted: boolean,
+  pushToTalk: boolean,
+) {
+  if (pushToTalk) {
+    return "Push to talk — click to interrupt";
+  }
+
   if (isMuted) {
     return "Mic muted";
   }
@@ -28,10 +37,12 @@ export function VoiceMicButton({
   isMuted,
   micStatus,
   disabled = false,
+  pushToTalk = false,
   onToggle,
 }: VoiceMicButtonProps) {
   const active = !isMuted;
-  const busy = micStatus === "transcribing" || disabled;
+  // Stay clickable during assistant speech so push-to-talk can interrupt.
+  const busy = micStatus === "transcribing" || (disabled && !pushToTalk);
 
   return (
     <button
@@ -40,6 +51,7 @@ export function VoiceMicButton({
         "voice-mic-button",
         active ? "is-active" : "",
         micStatus === "recording" ? "is-recording" : "",
+        pushToTalk ? "is-push-to-talk" : "",
         busy ? "is-busy" : "",
       ]
         .filter(Boolean)
@@ -47,10 +59,10 @@ export function VoiceMicButton({
       onClick={() => void onToggle()}
       disabled={busy}
       aria-pressed={active}
-      aria-label={statusLabel(micStatus, isMuted)}
-      title={statusLabel(micStatus, isMuted)}
+      aria-label={statusLabel(micStatus, isMuted, pushToTalk)}
+      title={statusLabel(micStatus, isMuted, pushToTalk)}
     >
-      {isMuted ? (
+      {isMuted && !pushToTalk ? (
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" />
           <path d="M17 11a5 5 0 0 1-10 0" />

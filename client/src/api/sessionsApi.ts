@@ -19,6 +19,7 @@ export interface SessionSnapshot {
   updatedAt: string;
   boardState: BoardState;
   transcript: TranscriptEntry[];
+  notes?: string;
 }
 
 export async function listLearningSessions(): Promise<SessionSummary[]> {
@@ -94,6 +95,64 @@ export async function syncSessionTranscript(
   if (!response.ok) {
     throw new Error("Failed to save lesson transcript");
   }
+}
+
+export async function syncSessionNotes(
+  sessionId: string,
+  notes: string,
+): Promise<void> {
+  const response = await fetch(`/api/sessions/${sessionId}/notes`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to save lesson notes");
+  }
+}
+
+export async function syncSessionCanvasBackground(
+  sessionId: string,
+  backgroundColor: string,
+): Promise<void> {
+  const response = await fetch(
+    `/api/sessions/${sessionId}/canvas-background`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backgroundColor }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error("Failed to save canvas background");
+  }
+}
+
+export async function summarizeSessionConversation(
+  sessionId: string,
+  transcript: TranscriptEntry[],
+): Promise<{ topic: string; summary: string }> {
+  const response = await fetch(`/api/sessions/${sessionId}/summarize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transcript: transcript
+        .filter((entry) => entry.kind === "student" || entry.kind === "speak")
+        .map((entry) => ({
+          kind: entry.kind,
+          text: entry.text,
+        })),
+    }),
+  });
+  const payload = (await response.json()) as {
+    topic?: string;
+    summary?: string;
+    error?: string;
+  };
+  if (!response.ok || !payload.topic || !payload.summary) {
+    throw new Error(payload.error ?? "Failed to summarize conversation");
+  }
+  return { topic: payload.topic, summary: payload.summary };
 }
 
 export async function applyUserBoardAction(

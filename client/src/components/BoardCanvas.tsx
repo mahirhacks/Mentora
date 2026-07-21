@@ -8,6 +8,10 @@ import type {
   UserBoardAction,
   UserBoardTool,
 } from "../types";
+import {
+  BoardSettingsButton,
+  type BoardCanvasColor,
+} from "./BoardSettingsButton";
 
 interface BoardCanvasProps {
   boardState: BoardState;
@@ -16,6 +20,8 @@ interface BoardCanvasProps {
   activeToolName?: string | null;
   userTool: UserBoardTool;
   disabled?: boolean;
+  canvasColor: BoardCanvasColor;
+  onCanvasColorChange: (color: BoardCanvasColor) => void;
   onInteractionStart?: () => void;
   onUserAction: (action: UserBoardAction) => Promise<BoardState>;
 }
@@ -237,6 +243,8 @@ export function BoardCanvas({
   activeToolName,
   userTool,
   disabled = false,
+  canvasColor,
+  onCanvasColorChange,
   onInteractionStart,
   onUserAction,
 }: BoardCanvasProps) {
@@ -244,6 +252,7 @@ export function BoardCanvas({
   const [drag, setDrag] = useState<DragState | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
+  const [showGrid, setShowGrid] = useState(false);
   const renderedState = useMemo(
     () => previewState(boardState, userTool, drag),
     [boardState, drag, userTool],
@@ -260,7 +269,10 @@ export function BoardCanvas({
       return;
     }
 
-    drawBoardState(context, renderedState, width, height);
+    drawBoardState(context, renderedState, width, height, {
+      backgroundColor: canvasColor,
+      showGrid,
+    });
     const selected =
       selectedObjectId && renderedState.objects[selectedObjectId];
     if (selected) {
@@ -276,7 +288,7 @@ export function BoardCanvas({
       );
       context.restore();
     }
-  }, [height, renderedState, selectedObjectId, width]);
+  }, [canvasColor, height, renderedState, selectedObjectId, showGrid, width]);
 
   useEffect(() => {
     if (selectedObjectId && !boardState.objects[selectedObjectId]) {
@@ -423,6 +435,12 @@ export function BoardCanvas({
 
   return (
     <div className="board-canvas-wrap">
+      <BoardSettingsButton
+        showGrid={showGrid}
+        onToggleGrid={() => setShowGrid((current) => !current)}
+        canvasColor={canvasColor}
+        onCanvasColorChange={onCanvasColorChange}
+      />
       {activeToolName ? (
         <div className="board-status">Drawing: {activeToolName}</div>
       ) : null}
@@ -433,6 +451,7 @@ export function BoardCanvas({
         height={height}
         aria-label="Teaching board canvas"
         data-user-tool={userTool}
+        style={{ background: canvasColor }}
         aria-disabled={disabled || isCommitting}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

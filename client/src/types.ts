@@ -129,6 +129,8 @@ export interface BoardState {
   objects: Record<string, BoardObject>;
   revision: number;
   activity?: BoardActivity[];
+  /** Student-selected canvas background color (hex). */
+  backgroundColor?: string;
 }
 
 export type UserBoardAction =

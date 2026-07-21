@@ -10,6 +10,9 @@ import {
   applyUserBoardAction as applyUserBoardActionApi,
   createLearningSession,
   fetchLearningSession,
+  summarizeSessionConversation,
+  syncSessionCanvasBackground,
+  syncSessionNotes,
   syncSessionTranscript,
 } from "../api/sessionsApi";
 import { streamStudentTurn, transcribeAudio } from "../api/voiceApi";
@@ -22,15 +25,52 @@ import type {
   UserBoardAction,
 } from "../types";
 import {
+  BOARD_CANVAS_COLORS,
+  type BoardCanvasColor,
+} from "../components/BoardSettingsButton";
+import {
   initialTurnState,
   isTurnActive,
   turnReducer,
 } from "./turnState";
 
-const emptyBoard = (): BoardState => ({ objects: {}, revision: 0 });
+const emptyBoard = (): BoardState => ({
+  objects: {},
+  revision: 0,
+  backgroundColor: "#f7f7f8",
+});
+
+function asBoardCanvasColor(value: string | undefined): BoardCanvasColor {
+  const match = BOARD_CANVAS_COLORS.find((color) => color.value === value);
+  return match?.value ?? "#f7f7f8";
+}
 const CANVAS_SETTLE_MS = 2_300;
 const VOICE_SETTLE_MS = 350;
 const COMBINED_SETTLE_MS = 350;
+
+function isMeaningfulUtterance(text: string) {
+  const cleaned = text.trim();
+  if (cleaned.length < 2) {
+    return false;
+  }
+
+  // Require at least one real word (letters) or a numeric answer like "24".
+  // Reject pure noise / punctuation-only transcriptions.
+  return /[A-Za-z]{2,}|\d+/.test(cleaned);
+}
+
+function appendSummaryToNotes(
+  notes: string,
+  topic: string,
+  summary: string,
+) {
+  const block = `${topic}\n${summary}`;
+  const trimmed = notes.replace(/\s+$/, "");
+  if (!trimmed) {
+    return `${block}\n`;
+  }
+  return `${trimmed}\n\n${block}\n`;
+}
 
 interface RunTurnOptions {
   transcriptText?: string;
@@ -60,12 +100,13 @@ export function useTeachingSession(
 
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [boardState, setBoardState] = useState<BoardState>(emptyBoard);
+  const [canvasColor, setCanvasColorState] =
+    useState<BoardCanvasColor>("#f7f7f8");
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [notes, setNotesState] = useState("");
   const [prompt, setPrompt] = useState("");
   const [caption, setCaption] = useState("");
-  const [isLoadingSession, setIsLoadingSession] = useState(
-    Boolean(initialSessionId),
-  );
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [turnState, dispatchTurn] = useReducer(
     turnReducer,
     initialTurnState,
@@ -86,6 +127,8 @@ export function useTeachingSession(
   const autoStartHandledRef = useRef(false);
   const transcriptRef = useRef<TranscriptEntry[]>([]);
   const sessionIdRef = useRef<string | null>(sessionId);
+  const canvasColorRef = useRef<BoardCanvasColor>(canvasColor);
+  const notesSaveTimerRef = useRef<number | null>(null);
   const boardActionPendingRef = useRef(false);
   const pendingCanvasRef = useRef(false);
   const pendingVoiceTextRef = useRef<string | null>(null);
@@ -99,6 +142,69 @@ export function useTeachingSession(
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
+
+  useEffect(() => {
+    canvasColorRef.current = canvasColor;
+  }, [canvasColor]);
+
+  const setNotes = useCallback((next: string) => {
+    setNotesState(next);
+    const id = sessionIdRef.current;
+    if (!id) {
+      return;
+    }
+    if (notesSaveTimerRef.current !== null) {
+      window.clearTimeout(notesSaveTimerRef.current);
+    }
+    notesSaveTimerRef.current = window.setTimeout(() => {
+      notesSaveTimerRef.current = null;
+      void syncSessionNotes(id, next).catch(() => {
+        // Persistence failures should not interrupt note-taking.
+      });
+    }, 450);
+  }, []);
+
+  const setCanvasColor = useCallback((next: BoardCanvasColor) => {
+    canvasColorRef.current = next;
+    setCanvasColorState(next);
+    setBoardState((current) => ({
+      ...current,
+      backgroundColor: next,
+    }));
+    const id = sessionIdRef.current;
+    if (!id) {
+      return;
+    }
+    void syncSessionCanvasBackground(id, next).catch(() => {
+      // Persistence failures should not interrupt canvas settings.
+    });
+  }, []);
+
+  const applyRemoteBoardState = useCallback((next: BoardState) => {
+    setBoardState({
+      ...next,
+      backgroundColor:
+        next.backgroundColor ?? canvasColorRef.current ?? "#f7f7f8",
+    });
+  }, []);
+
+  const summarizeConversationNotes = useCallback(async () => {
+    const id = sessionIdRef.current;
+    if (!id) {
+      throw new Error("Start a lesson before summarizing.");
+    }
+    const result = await summarizeSessionConversation(
+      id,
+      transcriptRef.current,
+    );
+    setNotesState((current) => {
+      const next = appendSummaryToNotes(current, result.topic, result.summary);
+      void syncSessionNotes(id, next).catch(() => {
+        // Persistence failures should not interrupt note-taking.
+      });
+      return next;
+    });
+  }, []);
 
   const clearPendingInputTimer = useCallback(() => {
     if (pendingInputTimerRef.current !== null) {
@@ -208,7 +314,7 @@ export function useTeachingSession(
           break;
         }
         case "tool_result":
-          setBoardState(event.boardState);
+          applyRemoteBoardState(event.boardState);
           dispatchTurn({ type: "tool_complete" });
           break;
         case "observe_context":
@@ -232,7 +338,7 @@ export function useTeachingSession(
           await playVoiceAudio(event.audioBase64, event.mimeType);
           break;
         case "done":
-          setBoardState(event.boardState);
+          applyRemoteBoardState(event.boardState);
           dispatchTurn({ type: "ready" });
           if (sessionIdRef.current) {
             window.setTimeout(() => {
@@ -252,7 +358,7 @@ export function useTeachingSession(
           break;
       }
     },
-    [handleBargeIn, persistTranscript, playVoiceAudio],
+    [applyRemoteBoardState, handleBargeIn, persistTranscript, playVoiceAudio],
   );
 
   const runStudentTurn = useCallback(
@@ -292,14 +398,24 @@ export function useTeachingSession(
             turnId,
             signal: controller.signal,
             onSession: (id) => {
+              sessionIdRef.current = id;
               setSessionId(id);
               onSessionReady?.(id);
+              void syncSessionCanvasBackground(
+                id,
+                canvasColorRef.current,
+              ).catch(() => undefined);
             },
           },
         );
         if (nextSessionId && activeTurnIdRef.current === turnId) {
+          sessionIdRef.current = nextSessionId;
           setSessionId(nextSessionId);
           onSessionReady?.(nextSessionId);
+          void syncSessionCanvasBackground(
+            nextSessionId,
+            canvasColorRef.current,
+          ).catch(() => undefined);
           // Let React flush transcript before syncing.
           window.setTimeout(() => {
             void persistTranscript(nextSessionId);
@@ -374,11 +490,17 @@ export function useTeachingSession(
           id = created.id;
           sessionIdRef.current = id;
           setSessionId(id);
-          setBoardState(created.boardState);
+          applyRemoteBoardState({
+            ...created.boardState,
+            backgroundColor: canvasColorRef.current,
+          });
+          void syncSessionCanvasBackground(id, canvasColorRef.current).catch(
+            () => undefined,
+          );
           onSessionReady?.(id);
         }
         const nextState = await applyUserBoardActionApi(id, action);
-        setBoardState(nextState);
+        applyRemoteBoardState(nextState);
         pendingCanvasRef.current = true;
         schedulePendingInput(
           pendingVoiceTextRef.current
@@ -391,6 +513,7 @@ export function useTeachingSession(
       }
     },
     [
+      applyRemoteBoardState,
       cancelActiveTurn,
       isLoadingSession,
       onSessionReady,
@@ -420,14 +543,16 @@ export function useTeachingSession(
   const handleVoiceUtterance = useCallback(
     async (blob: Blob) => {
       try {
-        cancelActiveTurn();
-        dispatchTurn({ type: "transcribing" });
+        // Transcribe first. Only interrupt Mentora when we have real words —
+        // empty / noise transcripts must not kill thinking or voice.
         const text = await transcribeAudio(blob);
-        if (!text.trim()) {
-          dispatchTurn({ type: "ready" });
+        const cleaned = text.trim();
+        if (!isMeaningfulUtterance(cleaned)) {
           return;
         }
-        pendingVoiceTextRef.current = text.trim();
+
+        cancelActiveTurn();
+        pendingVoiceTextRef.current = cleaned;
         dispatchTurn({ type: "ready" });
         schedulePendingInput(
           pendingCanvasRef.current
@@ -435,7 +560,7 @@ export function useTeachingSession(
             : VOICE_SETTLE_MS,
         );
       } catch {
-        dispatchTurn({ type: "ready" });
+        // Transcription failures should not interrupt an active turn.
       }
     },
     [cancelActiveTurn, schedulePendingInput],
@@ -445,13 +570,13 @@ export function useTeachingSession(
     isMuted,
     micStatus,
     micError,
+    pushToTalk,
     toggleMute,
     stopListening,
   } = useVoiceInput({
     disabled: isLoadingSession,
     assistantSpeaking: isSpeaking,
     onUtterance: handleVoiceUtterance,
-    onBargeIn: handleBargeIn,
   });
 
   const reset = useCallback(async () => {
@@ -463,6 +588,7 @@ export function useTeachingSession(
     }
     setBoardState(emptyBoard());
     setTranscript([]);
+    setNotesState("");
     setCaption("");
     dispatchTurn({ type: "ready" });
   }, [persistTranscript, sessionId, stopCurrentTurn, stopListening]);
@@ -470,30 +596,58 @@ export function useTeachingSession(
   useEffect(() => {
     let cancelled = false;
     const bootSessionId = initialSessionId;
+    const bootPrompt = autoStartPrompt?.trim() || undefined;
 
-    async function loadSession() {
-      if (!bootSessionId) {
-        setIsLoadingSession(false);
-        return;
-      }
-
+    async function bootSession() {
       setIsLoadingSession(true);
       try {
-        const snapshot = await fetchLearningSession(bootSessionId);
+        if (bootSessionId) {
+          // Resume one existing lesson — its planner memory stays isolated.
+          const snapshot = await fetchLearningSession(bootSessionId);
+          if (cancelled) {
+            return;
+          }
+          sessionIdRef.current = snapshot.id;
+          setSessionId(snapshot.id);
+          setBoardState(snapshot.boardState);
+          setCanvasColorState(
+            asBoardCanvasColor(snapshot.boardState.backgroundColor),
+          );
+          setNotesState(snapshot.notes ?? "");
+          setTranscript(
+            (snapshot.transcript ?? []).filter(
+              (entry): entry is TranscriptEntry =>
+                entry.kind === "student" || entry.kind === "speak",
+            ),
+          );
+          onSessionReady?.(snapshot.id);
+          return;
+        }
+
+        // New lesson: allocate a fresh server session before any turn so
+        // planner messages/board/transcript cannot bleed from another lesson.
+        const created = await createLearningSession(bootPrompt);
         if (cancelled) {
           return;
         }
-        setSessionId(snapshot.id);
-        setBoardState(snapshot.boardState);
-        setTranscript(
-          (snapshot.transcript ?? []).filter(
-            (entry): entry is TranscriptEntry =>
-              entry.kind === "student" || entry.kind === "speak",
-          ),
-        );
-        onSessionReady?.(snapshot.id);
+        sessionIdRef.current = created.id;
+        setSessionId(created.id);
+        setBoardState({
+          ...created.boardState,
+          backgroundColor: canvasColorRef.current,
+        });
+        setNotesState("");
+        setTranscript([]);
+        setCaption("");
+        dispatchTurn({ type: "ready" });
+        void syncSessionCanvasBackground(
+          created.id,
+          canvasColorRef.current,
+        ).catch(() => undefined);
+        onSessionReady?.(created.id);
       } catch {
-        if (!cancelled) {
+        if (!cancelled && bootSessionId) {
+          sessionIdRef.current = bootSessionId;
           setSessionId(bootSessionId);
         }
       } finally {
@@ -503,7 +657,7 @@ export function useTeachingSession(
       }
     }
 
-    void loadSession();
+    void bootSession();
     return () => {
       cancelled = true;
     };
@@ -530,6 +684,9 @@ export function useTeachingSession(
       if (pendingInputTimerRef.current !== null) {
         window.clearTimeout(pendingInputTimerRef.current);
       }
+      if (notesSaveTimerRef.current !== null) {
+        window.clearTimeout(notesSaveTimerRef.current);
+      }
     };
   }, []);
 
@@ -541,7 +698,12 @@ export function useTeachingSession(
   return {
     sessionId,
     boardState,
+    canvasColor,
+    setCanvasColor,
     transcript,
+    notes,
+    setNotes,
+    summarizeConversationNotes,
     prompt,
     setPrompt,
     isBusy: isBusy || isLoadingSession,
@@ -561,6 +723,7 @@ export function useTeachingSession(
     isMuted,
     micStatus,
     micError,
+    pushToTalk,
     toggleMute,
     getVoiceMetrics,
     applyUserBoardAction,

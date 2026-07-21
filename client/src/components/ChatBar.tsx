@@ -8,6 +8,7 @@ interface ChatBarProps {
   disabled?: boolean;
   isMuted: boolean;
   micStatus: MicStatus;
+  pushToTalk?: boolean;
   onToggleMic: () => void;
   onReset: () => void;
   onRetry?: () => void;
@@ -23,6 +24,7 @@ export function ChatBar({
   disabled = false,
   isMuted,
   micStatus,
+  pushToTalk = false,
   onToggleMic,
   onReset,
   onRetry,
@@ -42,6 +44,7 @@ export function ChatBar({
         isMuted={isMuted}
         micStatus={micStatus}
         disabled={disabled}
+        pushToTalk={pushToTalk}
         onToggle={onToggleMic}
       />
       <input

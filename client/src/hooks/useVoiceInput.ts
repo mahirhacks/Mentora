@@ -17,7 +17,6 @@ interface UseVoiceInputOptions {
   disabled?: boolean;
   assistantSpeaking?: boolean;
   onUtterance: (blob: Blob) => Promise<void>;
-  onBargeIn?: () => void;
 }
 
 function pickRecorderMimeType() {
@@ -40,7 +39,6 @@ export function useVoiceInput({
   disabled = false,
   assistantSpeaking = false,
   onUtterance,
-  onBargeIn,
 }: UseVoiceInputOptions) {
   const [isMuted, setIsMuted] = useState(true);
   const [micStatus, setMicStatus] = useState<MicStatus>("muted");
@@ -61,15 +59,9 @@ export function useVoiceInput({
   const assistantSpeakingRef = useRef(false);
   const onUtteranceRef = useRef(onUtterance);
 
-  const onBargeInRef = useRef(onBargeIn);
-
   useEffect(() => {
     onUtteranceRef.current = onUtterance;
   }, [onUtterance]);
-
-  useEffect(() => {
-    onBargeInRef.current = onBargeIn;
-  }, [onBargeIn]);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -179,7 +171,6 @@ export function useVoiceInput({
     isRecordingRef.current = true;
     recordingStartedAtRef.current = Date.now();
     lastSpeechAtRef.current = Date.now();
-    onBargeInRef.current?.();
     setMicStatus("recording");
 
     recorder.addEventListener("dataavailable", (event) => {
@@ -221,13 +212,19 @@ export function useVoiceInput({
 
     const rms = Math.sqrt(sum / buffer.length);
     const now = Date.now();
-    // Echo cancellation handles most playback leakage. A slightly higher
-    // threshold while Mentora is speaking avoids self-barge-in from residual
-    // speaker audio without preventing a nearby student voice.
-    const threshold = assistantSpeakingRef.current
-      ? SPEECH_THRESHOLD * 1.8
-      : SPEECH_THRESHOLD;
-    const speaking = rms >= threshold;
+
+    // While Mentora is explaining, ignore ambient sound. The student must
+    // click the mic (push-to-talk) to barge in. Canvas drawing interrupt
+    // is handled separately and is unchanged.
+    if (assistantSpeakingRef.current && !isRecordingRef.current) {
+      setMicStatus("listening");
+      monitorFrameRef.current = requestAnimationFrame(() => {
+        monitorAudioRef.current();
+      });
+      return;
+    }
+
+    const speaking = rms >= SPEECH_THRESHOLD;
 
     if (speaking) {
       lastSpeechAtRef.current = now;
@@ -304,6 +301,7 @@ export function useVoiceInput({
       }
 
       setIsMuted(false);
+      isMutedRef.current = false;
       setMicStatus("listening");
       startMonitor();
     } catch (error) {
@@ -313,6 +311,7 @@ export function useVoiceInput({
           : "Microphone permission was denied.",
       );
       setIsMuted(true);
+      isMutedRef.current = true;
       setMicStatus("muted");
       releaseStream();
     }
@@ -329,6 +328,7 @@ export function useVoiceInput({
     }
 
     setIsMuted(true);
+    isMutedRef.current = true;
     setMicStatus("muted");
   }, [stopMonitor, stopRecorder]);
 
@@ -341,6 +341,21 @@ export function useVoiceInput({
     stopListening();
   }, [isMuted, startListening, stopListening]);
 
+  const handleMicPress = useCallback(async () => {
+    // Push-to-talk while the assistant is speaking: click opens capture.
+    // The active turn is only cancelled after transcription returns real
+    // words (see handleVoiceUtterance), so empty noise does not interrupt.
+    if (assistantSpeakingRef.current) {
+      if (isMutedRef.current) {
+        await startListening();
+      }
+      startRecording();
+      return;
+    }
+
+    await toggleMute();
+  }, [startListening, startRecording, toggleMute]);
+
   useEffect(() => {
     return () => {
       releaseStream();
@@ -351,7 +366,8 @@ export function useVoiceInput({
     isMuted,
     micStatus,
     micError,
-    toggleMute,
+    pushToTalk: assistantSpeaking,
+    toggleMute: handleMicPress,
     startListening,
     stopListening,
   };

@@ -219,9 +219,56 @@ function drawArrow(context: CanvasRenderingContext2D, object: BoardObject) {
   }
 }
 
-function clearCanvas(context: CanvasRenderingContext2D, width: number, height: number) {
-  context.fillStyle = "#f7f7f8";
+function clearCanvas(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  backgroundColor = "#f7f7f8",
+) {
+  context.fillStyle = backgroundColor;
   context.fillRect(0, 0, width, height);
+}
+
+function drawGrid(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  backgroundColor: string,
+) {
+  const step = 40;
+  // Slightly stronger lines on lighter boards, softer on darker ones.
+  const luminance = backgroundLuminance(backgroundColor);
+  context.save();
+  context.strokeStyle =
+    luminance > 0.55 ? "rgba(15, 23, 42, 0.08)" : "rgba(255, 255, 255, 0.1)";
+  context.lineWidth = 1;
+  context.beginPath();
+  for (let x = step; x < width; x += step) {
+    context.moveTo(x + 0.5, 0);
+    context.lineTo(x + 0.5, height);
+  }
+  for (let y = step; y < height; y += step) {
+    context.moveTo(0, y + 0.5);
+    context.lineTo(width, y + 0.5);
+  }
+  context.stroke();
+  context.restore();
+}
+
+function backgroundLuminance(color: string) {
+  const hex = color.replace("#", "");
+  if (hex.length !== 6) {
+    return 0.9;
+  }
+  const r = Number.parseInt(hex.slice(0, 2), 16) / 255;
+  const g = Number.parseInt(hex.slice(2, 4), 16) / 255;
+  const b = Number.parseInt(hex.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+export interface DrawBoardOptions {
+  backgroundColor?: string;
+  showGrid?: boolean;
 }
 
 export function drawBoardState(
@@ -229,8 +276,13 @@ export function drawBoardState(
   boardState: BoardState,
   width: number,
   height: number,
+  options: DrawBoardOptions = {},
 ) {
-  clearCanvas(context, width, height);
+  const backgroundColor = options.backgroundColor ?? "#f7f7f8";
+  clearCanvas(context, width, height, backgroundColor);
+  if (options.showGrid) {
+    drawGrid(context, width, height, backgroundColor);
+  }
 
   const objects = Object.values(boardState.objects);
   const layers: BoardObject["kind"][] = [

@@ -24,7 +24,12 @@ export function LessonPage({
     useState<UserBoardTool>("pointer");
   const {
     boardState,
+    canvasColor,
+    setCanvasColor,
     transcript,
+    notes,
+    setNotes,
+    summarizeConversationNotes,
     prompt,
     setPrompt,
     isBusy,
@@ -41,6 +46,7 @@ export function LessonPage({
     reset,
     isMuted,
     micStatus,
+    pushToTalk,
     toggleMute,
     getVoiceMetrics,
     applyUserBoardAction,
@@ -61,6 +67,8 @@ export function LessonPage({
             activeToolName={activeToolName}
             userTool={userBoardTool}
             disabled={!canEditBoard}
+            canvasColor={canvasColor}
+            onCanvasColorChange={setCanvasColor}
             onInteractionStart={interruptForBoardInput}
             onUserAction={applyUserBoardAction}
           />
@@ -95,6 +103,7 @@ export function LessonPage({
                 disabled={isBusy}
                 isMuted={isMuted}
                 micStatus={micStatus}
+                pushToTalk={pushToTalk}
                 onToggleMic={() => void toggleMute()}
                 onReset={() => void reset()}
                 onRetry={() => void retryLastTurn()}
@@ -112,6 +121,9 @@ export function LessonPage({
         isPlanning={isPlanning}
         turnPhase={turnPhase}
         getVoiceMetrics={getVoiceMetrics}
+        notes={notes}
+        onNotesChange={setNotes}
+        onSummarizeConversation={() => summarizeConversationNotes()}
       />
     </div>
   );
