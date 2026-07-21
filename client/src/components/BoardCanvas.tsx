@@ -54,6 +54,9 @@ function distanceToSegment(point: Point, from: Point, to: Point) {
 }
 
 function objectHit(object: BoardObject, point: Point) {
+  if (object.kind === "text" && object.ghost) {
+    return false;
+  }
   if (object.kind === "arrow") {
     return distanceToSegment(point, object.from, object.to) <= 12;
   }

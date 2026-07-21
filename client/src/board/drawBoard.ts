@@ -300,6 +300,9 @@ export function drawBoardState(
       if (object.kind !== kind) {
         continue;
       }
+      if (object.kind === "text" && object.ghost) {
+        continue;
+      }
 
       switch (object.kind) {
         case "shape":

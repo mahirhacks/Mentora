@@ -84,6 +84,8 @@ export interface TextObject extends BoardObjectBase {
   fontSize?: number;
   fontWeight?: "normal" | "bold";
   align?: "left" | "center" | "right";
+  groupId?: string;
+  ghost?: boolean;
 }
 
 export interface DivisionObject extends BoardObjectBase {
