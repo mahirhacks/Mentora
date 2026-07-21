@@ -15,9 +15,14 @@ import {
   resetSession,
   setSessionCanvasBackground,
   setSessionNotes,
+  setSessionPlannerTitle,
   setSessionTranscript,
+  getSessionTranscriptForTopic,
 } from "./sessionStore.js";
-import { summarizeConversation } from "./summarizeConversation.js";
+import {
+  generateLessonTopic,
+  summarizeConversation,
+} from "./summarizeConversation.js";
 import type { UserBoardAction } from "./userBoardActions.js";
 import {
   VoiceAssistant,
@@ -295,10 +300,42 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       sendJson(res, 400, { error: "transcript array is required" });
       return;
     }
-    if (!setSessionTranscript(sessionId, body.transcript)) {
+    const result = setSessionTranscript(sessionId, body.transcript);
+    if (!result.ok) {
       sendJson(res, 404, { error: "session not found" });
       return;
     }
+
+    if (result.needsLessonTopic) {
+      void (async () => {
+        try {
+          const source =
+            getSessionTranscriptForTopic(sessionId) ?? body.transcript ?? [];
+          const topic = await generateLessonTopic(
+            openai,
+            env.plannerModel,
+            source
+              .filter(
+                (entry) =>
+                  (entry.kind === "student" || entry.kind === "speak") &&
+                  typeof entry.text === "string" &&
+                  entry.text.trim().length > 0,
+              )
+              .map((entry) => ({
+                kind: entry.kind as "student" | "speak",
+                text: entry.text,
+              })),
+          );
+          setSessionPlannerTitle(sessionId, topic);
+        } catch (error) {
+          console.warn(
+            "[sessions] lesson topic generation failed",
+            error instanceof Error ? error.message : error,
+          );
+        }
+      })();
+    }
+
     sendJson(res, 200, { ok: true });
     return;
   }

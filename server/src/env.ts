@@ -44,7 +44,7 @@ export function loadEnv(): ServerEnv {
   const plannerModel =
     process.env.OPENAI_PLANNER_MODEL ??
     fileValues.OPENAI_PLANNER_MODEL ??
-    "gpt-5.6-terra";
+    "gpt-5.6";
   const transcriptionModel =
     process.env.OPENAI_TRANSCRIPTION_MODEL ??
     fileValues.OPENAI_TRANSCRIPTION_MODEL ??

@@ -24,6 +24,8 @@ export interface PersistedSession {
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   transcript: SessionTranscriptEntry[];
   notes?: string;
+  /** True once the title was set from a planner-generated lesson topic. */
+  plannerTitle?: boolean;
 }
 
 export interface SessionSummary {
@@ -109,7 +111,18 @@ export function listPersistedSessions(): SessionSummary[] {
       const session = JSON.parse(
         readFileSync(resolve(SESSIONS_DIR, file), "utf8"),
       ) as PersistedSession;
-      const lastStudent = [...session.transcript]
+      const transcript = session.transcript ?? [];
+      const hasStudent = transcript.some(
+        (entry) => entry.kind === "student" && entry.text.trim().length > 0,
+      );
+      const hasSpeak = transcript.some(
+        (entry) => entry.kind === "speak" && entry.text.trim().length > 0,
+      );
+      // Empty / one-sided lessons stay off the home list.
+      if (!hasStudent || !hasSpeak) {
+        continue;
+      }
+      const lastStudent = [...transcript]
         .reverse()
         .find((entry) => entry.kind === "student");
       summaries.push({

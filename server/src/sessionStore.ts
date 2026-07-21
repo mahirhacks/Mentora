@@ -22,6 +22,7 @@ import {
   type SessionSummary,
   type SessionTranscriptEntry,
 } from "./sessionPersistence.js";
+import { hasListableTranscript } from "./summarizeConversation.js";
 
 interface SessionRecord {
   session: TeachingSession;
@@ -30,6 +31,7 @@ interface SessionRecord {
   updatedAt: string;
   transcript: SessionTranscriptEntry[];
   notes: string;
+  plannerTitle: boolean;
 }
 
 const sessions = new Map<string, SessionRecord>();
@@ -47,6 +49,7 @@ function createRecord(title = "New lesson"): SessionRecord {
     updatedAt: now,
     transcript: [],
     notes: "",
+    plannerTitle: false,
   };
 }
 
@@ -73,6 +76,7 @@ function hydrateRecord(persisted: PersistedSession): SessionRecord {
     updatedAt: persisted.updatedAt,
     transcript: persisted.transcript ?? [],
     notes: persisted.notes ?? "",
+    plannerTitle: Boolean(persisted.plannerTitle),
   };
 }
 
@@ -86,6 +90,7 @@ function toPersisted(sessionId: string, record: SessionRecord): PersistedSession
     messages: structuredClone(record.session.messages),
     transcript: structuredClone(record.transcript),
     notes: record.notes ?? "",
+    plannerTitle: record.plannerTitle,
   };
 }
 
@@ -149,6 +154,9 @@ export function listSessions(): SessionSummary[] {
     if (diskIds.has(id)) {
       continue;
     }
+    if (!hasListableTranscript(record.transcript)) {
+      continue;
+    }
     disk.push({
       id,
       title: record.title,
@@ -177,7 +185,7 @@ export function getSessionSnapshot(sessionId: string): PersistedSession | null {
 
 export function rememberUserPrompt(sessionId: string, prompt: string) {
   const record = sessions.get(sessionId);
-  if (!record) {
+  if (!record || record.plannerTitle) {
     return;
   }
   if (record.title === "New lesson" || record.title === "Untitled lesson") {
@@ -188,15 +196,50 @@ export function rememberUserPrompt(sessionId: string, prompt: string) {
 export function setSessionTranscript(
   sessionId: string,
   transcript: SessionTranscriptEntry[],
-) {
+): { ok: boolean; needsLessonTopic: boolean } {
   const { sessionId: id } = getOrCreateSession(sessionId);
   const record = sessions.get(id);
   if (!record) {
-    return false;
+    return { ok: false, needsLessonTopic: false };
   }
   record.transcript = structuredClone(transcript);
   persistSession(id);
+  const needsLessonTopic =
+    !record.plannerTitle && hasListableTranscript(record.transcript);
+  return { ok: true, needsLessonTopic };
+}
+
+export function setSessionPlannerTitle(sessionId: string, title: string) {
+  const record = sessions.get(sessionId) ?? (() => {
+    const persisted = readPersistedSession(sessionId);
+    if (!persisted) {
+      return null;
+    }
+    const hydrated = hydrateRecord(persisted);
+    sessions.set(sessionId, hydrated);
+    return hydrated;
+  })();
+  if (!record) {
+    return false;
+  }
+  const cleaned = title.trim().replace(/\s+/g, " ");
+  if (!cleaned) {
+    return false;
+  }
+  record.title = cleaned;
+  record.plannerTitle = true;
+  persistSession(sessionId);
   return true;
+}
+
+export function getSessionTranscriptForTopic(
+  sessionId: string,
+): SessionTranscriptEntry[] | null {
+  const live = sessions.get(sessionId);
+  if (live) {
+    return live.transcript;
+  }
+  return readPersistedSession(sessionId)?.transcript ?? null;
 }
 
 export function setSessionNotes(sessionId: string, notes: string) {
@@ -264,6 +307,7 @@ export function resetSession(sessionId: string): boolean {
   record.transcript = [];
   record.notes = "";
   record.title = "New lesson";
+  record.plannerTitle = false;
   persistSession(sessionId);
   return true;
 }
