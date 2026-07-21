@@ -23,6 +23,7 @@ export interface PersistedSession {
   boardState: BoardState;
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
   transcript: SessionTranscriptEntry[];
+  notes?: string;
 }
 
 export interface SessionSummary {

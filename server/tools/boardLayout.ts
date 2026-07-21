@@ -1,4 +1,5 @@
 import type { BoardObject, BoardState, Bounds } from "./types.js";
+import { getTeachingColorPalette } from "./colorPalette.js";
 
 export const BOARD_WIDTH = 1280;
 export const BOARD_HEIGHT = 720;
@@ -107,11 +108,26 @@ export function formatBoardLayoutForPrompt(boardState: BoardState): string {
 }
 
 export function formatBoardStateForPrompt(boardState: BoardState): string {
+  const backgroundColor = boardState.backgroundColor ?? "#f7f7f8";
+  const palette = getTeachingColorPalette(backgroundColor);
   return JSON.stringify(
     {
       canvas: {
         width: BOARD_WIDTH,
         height: BOARD_HEIGHT,
+        backgroundColor: palette.canvas_color,
+        backgroundLabel: palette.canvas_label,
+        color_palette: {
+          marking_color: palette.marking_color,
+          headline_1_color: palette.headline_1_color,
+          headline_2_color: palette.headline_2_color,
+          body_text_color: palette.body_text_color,
+          shape_stroke_color: palette.shape_stroke_color,
+          shape_fill_color: palette.shape_fill_color,
+          accent_color: palette.accent_color,
+          highlight_color: palette.highlight_color,
+          arrow_color: palette.arrow_color,
+        },
         safeZone: {
           x: SAFE_ZONE.x,
           y: SAFE_ZONE.y,

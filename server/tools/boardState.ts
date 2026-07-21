@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { BoardObject, BoardState, Bounds, Point } from "./types.js";
 
 export function createBoardState(): BoardState {
-  return { objects: {}, revision: 0, activity: [] };
+  return {
+    objects: {},
+    revision: 0,
+    activity: [],
+    backgroundColor: "#f7f7f8",
+  };
 }
 
 export function cloneBoardState(state: BoardState): BoardState {
@@ -21,6 +26,7 @@ export function commitObject(
   return {
     revision: state.revision + 1,
     activity: state.activity ?? [],
+    backgroundColor: state.backgroundColor,
     objects: {
       ...state.objects,
       [object.id]: {
@@ -37,6 +43,7 @@ export function removeObject(state: BoardState, objectId: string): BoardState {
   return {
     revision: state.revision + 1,
     activity: state.activity ?? [],
+    backgroundColor: state.backgroundColor,
     objects: rest,
   };
 }

@@ -12,6 +12,7 @@ import {
   BOARD_WIDTH,
   formatBoardStateForPrompt,
 } from "../../tools/boardLayout.js";
+import { formatColorPaletteForPrompt } from "../../tools/colorPalette.js";
 import type { TeachingStep } from "./types.js";
 import { boardToolSchemasForPrompt } from "./openaiTools.js";
 
@@ -28,14 +29,15 @@ export class TeachingSession {
   boardState: BoardState = createBoardState();
   private activeTurnId: string | null = null;
 
-  constructor(private readonly systemPrompt: string) {
+  constructor(private systemPrompt: string) {
     this.messages.push({ role: "system", content: this.systemPrompt });
   }
 
   reset() {
+    this.boardState = createBoardState();
+    this.systemPrompt = buildSystemPrompt(this.boardState);
     this.messages.length = 0;
     this.messages.push({ role: "system", content: this.systemPrompt });
-    this.boardState = createBoardState();
     this.activeTurnId = null;
   }
 
@@ -166,6 +168,15 @@ Do not return ordinary prose outside that tool call.
 - Size: ${BOARD_WIDTH} x ${BOARD_HEIGHT} pixels
 - Origin: top-left corner is (0, 0)
 - x increases to the right, y increases downward
+- Background color: ${boardState.backgroundColor ?? "#f7f7f8"}
+
+## Active color palette
+
+The board background changed the readable ink set. Use this palette for all new
+drawing on this turn (marks, headlines, body text, shape strokes/fills, arrows,
+highlights). Do not invent low-contrast colors that blend into the background.
+
+${formatColorPaletteForPrompt(boardState.backgroundColor)}
 
 ${canvasBoundaryGuide()}
 

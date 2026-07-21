@@ -29,6 +29,7 @@ interface SessionRecord {
   createdAt: string;
   updatedAt: string;
   transcript: SessionTranscriptEntry[];
+  notes: string;
 }
 
 const sessions = new Map<string, SessionRecord>();
@@ -45,6 +46,7 @@ function createRecord(title = "New lesson"): SessionRecord {
     createdAt: now,
     updatedAt: now,
     transcript: [],
+    notes: "",
   };
 }
 
@@ -70,6 +72,7 @@ function hydrateRecord(persisted: PersistedSession): SessionRecord {
     createdAt: persisted.createdAt,
     updatedAt: persisted.updatedAt,
     transcript: persisted.transcript ?? [],
+    notes: persisted.notes ?? "",
   };
 }
 
@@ -82,6 +85,7 @@ function toPersisted(sessionId: string, record: SessionRecord): PersistedSession
     boardState: structuredClone(record.session.boardState),
     messages: structuredClone(record.session.messages),
     transcript: structuredClone(record.transcript),
+    notes: record.notes ?? "",
   };
 }
 
@@ -94,36 +98,44 @@ export function persistSession(sessionId: string) {
   writePersistedSession(toPersisted(sessionId, record));
 }
 
-export function getOrCreateSession(sessionId?: string): {
+export function createNamedSession(title?: string): {
   sessionId: string;
   session: TeachingSession;
 } {
-  if (sessionId && sessions.has(sessionId)) {
-    return { sessionId, session: sessions.get(sessionId)!.session };
-  }
-
-  if (sessionId) {
-    const persisted = readPersistedSession(sessionId);
-    if (persisted) {
-      const record = hydrateRecord(persisted);
-      sessions.set(sessionId, record);
-      return { sessionId, session: record.session };
-    }
-  }
-
-  const id = sessionId ?? randomUUID();
-  const record = createRecord();
+  // Always allocate a brand-new isolated lesson memory (messages, board,
+  // transcript, notes). Never reuse another session's TeachingSession object.
+  const id = randomUUID();
+  const record = createRecord(title?.trim() || "New lesson");
   sessions.set(id, record);
   persistSession(id);
   return { sessionId: id, session: record.session };
 }
 
-export function createNamedSession(title?: string): {
+export function getOrCreateSession(sessionId?: string): {
   sessionId: string;
   session: TeachingSession;
 } {
+  const requestedId = sessionId?.trim();
+
+  if (requestedId && sessions.has(requestedId)) {
+    return {
+      sessionId: requestedId,
+      session: sessions.get(requestedId)!.session,
+    };
+  }
+
+  if (requestedId) {
+    const persisted = readPersistedSession(requestedId);
+    if (persisted) {
+      const record = hydrateRecord(persisted);
+      sessions.set(requestedId, record);
+      return { sessionId: requestedId, session: record.session };
+    }
+  }
+
+  // No usable session id → fresh memory. Ignore empty/blank ids.
   const id = randomUUID();
-  const record = createRecord(title?.trim() || "New lesson");
+  const record = createRecord();
   sessions.set(id, record);
   persistSession(id);
   return { sessionId: id, session: record.session };
@@ -187,6 +199,32 @@ export function setSessionTranscript(
   return true;
 }
 
+export function setSessionNotes(sessionId: string, notes: string) {
+  const { sessionId: id } = getOrCreateSession(sessionId);
+  const record = sessions.get(id);
+  if (!record) {
+    return false;
+  }
+  record.notes = notes;
+  persistSession(id);
+  return true;
+}
+
+export function setSessionCanvasBackground(
+  sessionId: string,
+  backgroundColor: string,
+) {
+  const { sessionId: id } = getOrCreateSession(sessionId);
+  const record = sessions.get(id);
+  if (!record) {
+    return false;
+  }
+  record.session.boardState.backgroundColor = backgroundColor;
+  record.session.refreshSystemPrompt();
+  persistSession(id);
+  return true;
+}
+
 export function applySessionBoardAction(
   sessionId: string,
   action: UserBoardAction,
@@ -224,6 +262,7 @@ export function resetSession(sessionId: string): boolean {
   session.reset();
   session.refreshSystemPrompt();
   record.transcript = [];
+  record.notes = "";
   record.title = "New lesson";
   persistSession(sessionId);
   return true;

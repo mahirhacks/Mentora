@@ -13,8 +13,11 @@ import {
   listSessions,
   rememberUserPrompt,
   resetSession,
+  setSessionCanvasBackground,
+  setSessionNotes,
   setSessionTranscript,
 } from "./sessionStore.js";
+import { summarizeConversation } from "./summarizeConversation.js";
 import type { UserBoardAction } from "./userBoardActions.js";
 import {
   VoiceAssistant,
@@ -297,6 +300,90 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       return;
     }
     sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === "PUT" && url.pathname.match(/^\/api\/sessions\/[^/]+\/notes$/)) {
+    const sessionId = url.pathname.split("/")[3];
+    const body = (await readJsonBody(req)) as { notes?: unknown };
+    if (typeof body.notes !== "string") {
+      sendJson(res, 400, { error: "notes string is required" });
+      return;
+    }
+    if (!setSessionNotes(sessionId, body.notes)) {
+      sendJson(res, 404, { error: "session not found" });
+      return;
+    }
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (
+    req.method === "PUT" &&
+    url.pathname.match(/^\/api\/sessions\/[^/]+\/canvas-background$/)
+  ) {
+    const sessionId = url.pathname.split("/")[3];
+    const body = (await readJsonBody(req)) as { backgroundColor?: unknown };
+    if (
+      typeof body.backgroundColor !== "string" ||
+      !/^#[0-9a-fA-F]{6}$/.test(body.backgroundColor.trim())
+    ) {
+      sendJson(res, 400, {
+        error: "backgroundColor must be a hex color like #f7f7f8",
+      });
+      return;
+    }
+    if (
+      !setSessionCanvasBackground(sessionId, body.backgroundColor.trim().toLowerCase())
+    ) {
+      sendJson(res, 404, { error: "session not found" });
+      return;
+    }
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname.match(/^\/api\/sessions\/[^/]+\/summarize$/)
+  ) {
+    const sessionId = url.pathname.split("/")[3];
+    const snapshot = getSessionSnapshot(sessionId);
+    if (!snapshot) {
+      sendJson(res, 404, { error: "session not found" });
+      return;
+    }
+    const body = (await readJsonBody(req).catch(() => ({}))) as {
+      transcript?: Array<{
+        kind?: string;
+        text?: string;
+      }>;
+    };
+    const source =
+      Array.isArray(body.transcript) && body.transcript.length > 0
+        ? body.transcript
+        : (snapshot.transcript ?? []);
+    const entries = source.filter(
+      (entry): entry is { kind: "student" | "speak"; text: string } =>
+        (entry.kind === "student" || entry.kind === "speak") &&
+        typeof entry.text === "string" &&
+        entry.text.trim().length > 0,
+    );
+    try {
+      const result = await summarizeConversation(
+        openai,
+        env.plannerModel,
+        entries,
+      );
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 400, {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to summarize conversation",
+      });
+    }
     return;
   }
 
