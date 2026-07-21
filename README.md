@@ -40,7 +40,7 @@ flowchart LR
 ```
 Models used in the submitted build (also set in `.env.example`):
 
-- Planner: `gpt-5.6-terra`
+- Planner: `gpt-5.6`
 - Transcriber: `gpt-4o-mini-transcribe`
 - Voice performer: `gpt-realtime-2.1-mini`
 
@@ -166,9 +166,9 @@ Session resume and a small arrow tool were added after the core teaching loop
 was stable. The submission still focuses on generated visual pedagogy within a
 tested primitive set rather than unconstrained diagram generation.
 
-**Runtime vs build:** the live lesson planner in this build is configured as
-`gpt-5.6-terra` (see `.env.example`). The agents used to *author* the codebase
-were Cursor + Grok 4.5 + gpt-5.6-sol xhigh.
+**Runtime vs build:** the live lesson planner in this build is **gpt-5.6**
+(see `.env.example`). The agents used to *author* the codebase were Cursor +
+Grok 4.5 + gpt-5.6-sol xhigh.
 
 ## Repository layout
 

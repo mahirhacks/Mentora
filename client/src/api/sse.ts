@@ -40,6 +40,10 @@ export async function consumeLessonStream(
       buffer = chunks.pop() ?? "";
 
       for (const chunk of chunks) {
+        if (options?.signal?.aborted) {
+          throw new DOMException("Turn aborted", "AbortError");
+        }
+
         const lines = chunk.split("\n");
         let eventType = "message";
         let dataLine = "";
@@ -64,6 +68,9 @@ export async function consumeLessonStream(
           if (options?.turnId && payload.turnId !== options.turnId) {
             continue;
           }
+          if (options?.signal?.aborted) {
+            throw new DOMException("Turn aborted", "AbortError");
+          }
           nextSessionId = payload.sessionId;
           options?.onSession?.(payload.sessionId);
           continue;
@@ -79,6 +86,9 @@ export async function consumeLessonStream(
           );
         }
         expectedSequence += 1;
+        if (options?.signal?.aborted) {
+          throw new DOMException("Turn aborted", "AbortError");
+        }
         await onEvent(envelope.event);
       }
     }

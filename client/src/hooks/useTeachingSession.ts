@@ -86,7 +86,8 @@ type RunStudentTurn = (
 export interface UseTeachingSessionOptions {
   initialSessionId?: string | null;
   autoStartPrompt?: string | null;
-  onSessionReady?: (sessionId: string) => void;
+  mountId?: string;
+  onSessionReady?: (sessionId: string, mountId: string) => void;
 }
 
 export function useTeachingSession(
@@ -95,6 +96,7 @@ export function useTeachingSession(
   const {
     initialSessionId = null,
     autoStartPrompt = null,
+    mountId = "lesson",
     onSessionReady,
   } = options;
 
@@ -120,6 +122,7 @@ export function useTeachingSession(
   const playbackRef = useRef(new VoicePlaybackQueue());
   const activeTurnIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const mountAliveRef = useRef(true);
   const lastTurnRef = useRef<{
     text: string;
     source: "voice" | "chat";
@@ -297,7 +300,13 @@ export function useTeachingSession(
   );
 
   const handleEvent = useCallback(
-    async (event: LessonEvent) => {
+    async (event: LessonEvent, turnId: string) => {
+      if (
+        !mountAliveRef.current ||
+        activeTurnIdRef.current !== turnId
+      ) {
+        return;
+      }
       switch (event.type) {
         case "planning":
           setCaption("");
@@ -335,14 +344,20 @@ export function useTeachingSession(
           }
           break;
         case "voice_audio":
+          if (
+            !mountAliveRef.current ||
+            activeTurnIdRef.current !== turnId
+          ) {
+            return;
+          }
           await playVoiceAudio(event.audioBase64, event.mimeType);
           break;
         case "done":
           applyRemoteBoardState(event.boardState);
           dispatchTurn({ type: "ready" });
-          if (sessionIdRef.current) {
+          if (sessionIdRef.current && mountAliveRef.current) {
             window.setTimeout(() => {
-              if (sessionIdRef.current) {
+              if (sessionIdRef.current && mountAliveRef.current) {
                 void persistTranscript(sessionIdRef.current);
               }
             }, 50);
@@ -392,15 +407,21 @@ export function useTeachingSession(
           text,
           source,
           sessionIdRef.current,
-          handleEvent,
+          (event) => handleEvent(event, turnId),
           {
             enableVoice: true,
             turnId,
             signal: controller.signal,
             onSession: (id) => {
+              if (
+                !mountAliveRef.current ||
+                activeTurnIdRef.current !== turnId
+              ) {
+                return;
+              }
               sessionIdRef.current = id;
               setSessionId(id);
-              onSessionReady?.(id);
+              onSessionReady?.(id, mountId);
               void syncSessionCanvasBackground(
                 id,
                 canvasColorRef.current,
@@ -408,22 +429,29 @@ export function useTeachingSession(
             },
           },
         );
-        if (nextSessionId && activeTurnIdRef.current === turnId) {
+        if (
+          nextSessionId &&
+          mountAliveRef.current &&
+          activeTurnIdRef.current === turnId
+        ) {
           sessionIdRef.current = nextSessionId;
           setSessionId(nextSessionId);
-          onSessionReady?.(nextSessionId);
+          onSessionReady?.(nextSessionId, mountId);
           void syncSessionCanvasBackground(
             nextSessionId,
             canvasColorRef.current,
           ).catch(() => undefined);
           // Let React flush transcript before syncing.
           window.setTimeout(() => {
-            void persistTranscript(nextSessionId);
+            if (mountAliveRef.current) {
+              void persistTranscript(nextSessionId);
+            }
           }, 0);
         }
       } catch (caught) {
         if (
           !(caught instanceof DOMException && caught.name === "AbortError") &&
+          mountAliveRef.current &&
           activeTurnIdRef.current === turnId
         ) {
           dispatchTurn({
@@ -441,6 +469,7 @@ export function useTeachingSession(
     },
     [
       handleEvent,
+      mountId,
       onSessionReady,
       persistTranscript,
       cancelActiveTurn,
@@ -497,7 +526,7 @@ export function useTeachingSession(
           void syncSessionCanvasBackground(id, canvasColorRef.current).catch(
             () => undefined,
           );
-          onSessionReady?.(id);
+          onSessionReady?.(id, mountId);
         }
         const nextState = await applyUserBoardActionApi(id, action);
         applyRemoteBoardState(nextState);
@@ -516,6 +545,7 @@ export function useTeachingSession(
       applyRemoteBoardState,
       cancelActiveTurn,
       isLoadingSession,
+      mountId,
       onSessionReady,
       schedulePendingInput,
     ],
@@ -604,7 +634,7 @@ export function useTeachingSession(
         if (bootSessionId) {
           // Resume one existing lesson — its planner memory stays isolated.
           const snapshot = await fetchLearningSession(bootSessionId);
-          if (cancelled) {
+          if (cancelled || !mountAliveRef.current) {
             return;
           }
           sessionIdRef.current = snapshot.id;
@@ -620,14 +650,14 @@ export function useTeachingSession(
                 entry.kind === "student" || entry.kind === "speak",
             ),
           );
-          onSessionReady?.(snapshot.id);
+          onSessionReady?.(snapshot.id, mountId);
           return;
         }
 
         // New lesson: allocate a fresh server session before any turn so
         // planner messages/board/transcript cannot bleed from another lesson.
         const created = await createLearningSession(bootPrompt);
-        if (cancelled) {
+        if (cancelled || !mountAliveRef.current) {
           return;
         }
         sessionIdRef.current = created.id;
@@ -644,14 +674,14 @@ export function useTeachingSession(
           created.id,
           canvasColorRef.current,
         ).catch(() => undefined);
-        onSessionReady?.(created.id);
+        onSessionReady?.(created.id, mountId);
       } catch {
-        if (!cancelled && bootSessionId) {
+        if (!cancelled && bootSessionId && mountAliveRef.current) {
           sessionIdRef.current = bootSessionId;
           setSessionId(bootSessionId);
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && mountAliveRef.current) {
           setIsLoadingSession(false);
         }
       }
@@ -678,14 +708,22 @@ export function useTeachingSession(
   }, [autoStartPrompt, isLoadingSession, runStudentTurn]);
 
   useEffect(() => {
+    mountAliveRef.current = true;
     return () => {
+      mountAliveRef.current = false;
       abortRef.current?.abort();
+      abortRef.current = null;
+      activeTurnIdRef.current = null;
       playbackRef.current.cancel();
+      pendingCanvasRef.current = false;
+      pendingVoiceTextRef.current = null;
       if (pendingInputTimerRef.current !== null) {
         window.clearTimeout(pendingInputTimerRef.current);
+        pendingInputTimerRef.current = null;
       }
       if (notesSaveTimerRef.current !== null) {
         window.clearTimeout(notesSaveTimerRef.current);
+        notesSaveTimerRef.current = null;
       }
     };
   }, []);

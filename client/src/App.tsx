@@ -45,12 +45,21 @@ export function App() {
   return (
     <LessonPage
       key={view.mountId}
+      mountId={view.mountId}
       sessionId={view.sessionId}
       initialPrompt={view.initialPrompt}
       onBack={openHome}
-      onSessionReady={(sessionId) => {
+      onSessionReady={(sessionId, mountId) => {
         setView((current) => {
-          if (current.kind !== "lesson" || current.sessionId === sessionId) {
+          // Ignore callbacks from a lesson that already unmounted / switched away.
+          if (current.kind !== "lesson" || current.mountId !== mountId) {
+            return current;
+          }
+          if (current.sessionId === sessionId) {
+            return current;
+          }
+          // Never replace an already-bound lesson id with a different one.
+          if (current.sessionId != null) {
             return current;
           }
           return { ...current, sessionId, initialPrompt: null };

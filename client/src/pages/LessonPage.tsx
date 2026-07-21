@@ -8,13 +8,15 @@ import { useTeachingSession } from "../hooks/useTeachingSession";
 import type { UserBoardTool } from "../types";
 
 interface LessonPageProps {
+  mountId: string;
   sessionId?: string | null;
   initialPrompt?: string | null;
   onBack: () => void;
-  onSessionReady?: (sessionId: string) => void;
+  onSessionReady?: (sessionId: string, mountId: string) => void;
 }
 
 export function LessonPage({
+  mountId,
   sessionId = null,
   initialPrompt = null,
   onBack,
@@ -55,6 +57,7 @@ export function LessonPage({
   } = useTeachingSession({
     initialSessionId: sessionId,
     autoStartPrompt: initialPrompt,
+    mountId,
     onSessionReady,
   });
 
