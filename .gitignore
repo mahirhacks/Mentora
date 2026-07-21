@@ -43,3 +43,9 @@ server/data/
 
 # Local scratch notes
 temp_prompts.txt
+
+# Local-only submission / demo notes (keep on disk, do not publish)
+ARCHITECTURE.md
+DEMO.md
+REHEARSAL_RESULTS.md
+project_story.md
