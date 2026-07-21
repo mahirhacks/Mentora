@@ -145,10 +145,11 @@ turn, a four-part fraction bar, and simple arithmetic. They prove deterministic
 orchestration and state reuse; they do not claim that every live model run is
 identical.
 
-## Codex development story
+## How Mentora was built
 
-Codex was used as an engineering partner rather than as a code generator for
-one isolated feature. It helped:
+Mentora was developed in **Cursor** with **Grok 4.5** and **gpt-5.6-sol** (xhigh)
+as coding agents — used as engineering partners for architecture, debugging,
+and tests rather than as one-shot feature generators. They helped:
 
 1. trace the real voice/planner/tool/canvas path and identify drift between the
    production and debug contracts;
@@ -165,8 +166,9 @@ Session resume and a small arrow tool were added after the core teaching loop
 was stable. The submission still focuses on generated visual pedagogy within a
 tested primitive set rather than unconstrained diagram generation.
 
-The required Codex `/feedback` Session ID must be entered in the Build Week
-submission form after the final development session.
+**Runtime vs build:** the live lesson planner in this build is configured as
+`gpt-5.6-terra` (see `.env.example`). The agents used to *author* the codebase
+were Cursor + Grok 4.5 + gpt-5.6-sol xhigh.
 
 ## Repository layout
 
